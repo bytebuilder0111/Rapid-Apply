@@ -116,13 +116,12 @@ async def save_analysis(
     return await _to_out(db, analysis)
 
 
-async def _to_out(db: AsyncSession, analysis: Analysis) -> AnalysisOut:
-    creator = await db.get(User, analysis.created_by)
+def _build_out(analysis: Analysis, *, creator_name: str) -> AnalysisOut:
     return AnalysisOut(
         id=analysis.id,
         client_id=analysis.client_id,
         created_by=analysis.created_by,
-        created_by_name=creator.name if creator else "Unknown",
+        created_by_name=creator_name,
         company_name=analysis.company_name,
         position_name=analysis.position_name,
         job_description=analysis.job_description,
@@ -139,6 +138,11 @@ async def _to_out(db: AsyncSession, analysis: Analysis) -> AnalysisOut:
         record_error=analysis.record_error,
         created_at=analysis.created_at,
     )
+
+
+async def _to_out(db: AsyncSession, analysis: Analysis) -> AnalysisOut:
+    creator = await db.get(User, analysis.created_by)
+    return _build_out(analysis, creator_name=creator.name if creator else "Unknown")
 
 
 async def list_analyses(
@@ -169,7 +173,16 @@ async def list_analyses(
 
     result = await db.execute(stmt)
     rows = list(result.scalars().all())
-    return [await _to_out(db, row) for row in rows]
+    if not rows:
+        return []
+
+    creator_ids = {row.created_by for row in rows}
+    creators = await db.execute(select(User.id, User.name).where(User.id.in_(creator_ids)))
+    names_by_id = dict(creators.all())
+
+    return [
+        _build_out(row, creator_name=names_by_id.get(row.created_by, "Unknown")) for row in rows
+    ]
 
 
 async def get_analysis(db: AsyncSession, analysis_id: UUID, *, client_id: UUID) -> AnalysisOut:
