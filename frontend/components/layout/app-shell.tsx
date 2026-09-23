@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import type { LucideIcon } from "lucide-react";
-import { LogOut, Moon, Sun } from "lucide-react";
+import { LogOut, Moon, Sun, TriangleAlert } from "lucide-react";
 import { useTheme } from "next-themes";
 
 import { useAuth } from "@/components/layout/auth-provider";
@@ -17,6 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { integrationsApi } from "@/lib/integrations-api";
 
 export type NavItem = {
   label: string;
@@ -49,6 +51,14 @@ export function AppShell({
   const router = useRouter();
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+
+  const isClientOrBidder = user?.role === "CLIENT" || user?.role === "BIDDER";
+  const { data: googleConnection } = useQuery({
+    queryKey: ["integrations", "google"],
+    queryFn: integrationsApi.getGoogle,
+    enabled: isClientOrBidder,
+  });
+  const needsReconnect = googleConnection?.status === "NEEDS_RECONNECT";
 
   const handleLogout = async () => {
     await logout();
@@ -119,6 +129,20 @@ export function AppShell({
             </DropdownMenuContent>
           </DropdownMenu>
         </header>
+        {needsReconnect && (
+          <div className="flex items-center gap-2 border-b bg-destructive/10 px-6 py-2 text-sm text-destructive">
+            <TriangleAlert className="size-4 shrink-0" />
+            <span>
+              The Google connection needs to be reconnected before Sheet recording will work
+              again.
+            </span>
+            {user?.role === "CLIENT" && (
+              <Link href="/client/integrations" className="ml-auto underline">
+                Reconnect
+              </Link>
+            )}
+          </div>
+        )}
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>

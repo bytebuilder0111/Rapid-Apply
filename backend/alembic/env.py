@@ -10,6 +10,7 @@ from app.config import settings
 from app.db import Base
 from app.integrations import models as integration_models  # noqa: F401  registers tables
 from app.profiles import models as profile_models  # noqa: F401  registers tables on Base.metadata
+from app.sheets import models as sheet_models  # noqa: F401  registers tables
 from app.tech_stacks import models as tech_stack_models  # noqa: F401  registers tables
 
 config = context.config

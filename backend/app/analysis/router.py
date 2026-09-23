@@ -1,14 +1,17 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis import service
+from app.analysis.models import RecordStatus
 from app.analysis.schemas import AnalysisOut, AnalyzeRequest, AnalyzeResponse, SaveAnalysisRequest
 from app.db import get_db
 from app.deps import get_current_user, require_roles, scope_client_id
+from app.errors import AppError
 from app.models import Role, User
+from app.sheets.service import record_analysis
 
 router = APIRouter(dependencies=[Depends(require_roles(Role.CLIENT, Role.BIDDER))])
 
@@ -38,12 +41,16 @@ async def analyze(
 @router.post("", response_model=AnalysisOut, status_code=201)
 async def save_analysis(
     payload: SaveAnalysisRequest,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisOut:
     client_id = scope_client_id(user)
     assert client_id is not None
-    return await service.save_analysis(db, user=user, client_id=client_id, payload=payload)
+    analysis = await service.save_analysis(db, user=user, client_id=client_id, payload=payload)
+    if analysis.record_status == RecordStatus.PENDING:
+        background_tasks.add_task(record_analysis, analysis.id)
+    return analysis
 
 
 @router.get("", response_model=list[AnalysisOut])
@@ -78,4 +85,19 @@ async def get_analysis(
 ) -> AnalysisOut:
     client_id = scope_client_id(user)
     assert client_id is not None
+    return await service.get_analysis(db, analysis_id, client_id=client_id)
+
+
+@router.post("/{analysis_id}/retry", response_model=AnalysisOut)
+async def retry_record(
+    analysis_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AnalysisOut:
+    client_id = scope_client_id(user)
+    assert client_id is not None
+    existing = await service.get_analysis(db, analysis_id, client_id=client_id)
+    if existing.record_status != RecordStatus.FAILED:
+        raise AppError("not_retryable", "Only a failed sheet write can be retried", 400)
+    await record_analysis(analysis_id)
     return await service.get_analysis(db, analysis_id, client_id=client_id)

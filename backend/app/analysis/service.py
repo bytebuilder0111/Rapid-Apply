@@ -7,12 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import analyze_job_description
-from app.analysis.models import Analysis, RecordStatus
+from app.analysis.models import Analysis
 from app.analysis.schemas import AnalysisOut, AnalyzeRequest, SaveAnalysisRequest
 from app.errors import AppError
 from app.integrations.service import get_decrypted_key_for_client, get_settings_row
 from app.models import Role, User
 from app.profiles.models import Profile
+from app.sheets.service import initial_record_status
 
 
 def normalize_jd_hash(job_description: str) -> str:
@@ -84,6 +85,10 @@ async def save_analysis(
         if profile is None or profile.client_id != client_id:
             raise AppError("invalid_profile", "Profile does not belong to this client", 400)
 
+    record_status = await initial_record_status(
+        db, client_id=client_id, profile_id=selected_profile_id, user=user
+    )
+
     analysis = Analysis(
         client_id=client_id,
         created_by=user.id,
@@ -103,7 +108,7 @@ async def save_analysis(
         prompt_version=payload.prompt_version,
         tokens=payload.tokens,
         latency_ms=payload.latency_ms,
-        record_status=RecordStatus.SKIPPED,
+        record_status=record_status,
     )
     db.add(analysis)
     await db.commit()

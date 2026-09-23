@@ -83,4 +83,5 @@ export const analysisApi = {
     return api.get<Analysis[]>(`/analyses${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => api.get<Analysis>(`/analyses/${id}`),
+  retry: (id: string) => api.post<Analysis>(`/analyses/${id}/retry`),
 };

@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { ResultCard } from "@/components/resume-selector/result-card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { analysisApi, type Analysis, type RecordStatus } from "@/lib/analysis-api";
+import { ApiError } from "@/lib/api";
 import { profilesApi } from "@/lib/profiles-api";
 
 const STATUS_VARIANT: Record<RecordStatus, "default" | "secondary" | "destructive"> = {
@@ -69,6 +71,9 @@ function ViewAnalysisDialog({
               Open job link
             </a>
           )}
+          {analysis.record_status === "FAILED" && analysis.record_error && (
+            <p className="text-sm text-destructive">Sheet write failed: {analysis.record_error}</p>
+          )}
           <ResultCard result={analysis.result} recommendedProfileName={profileName} />
         </div>
       </DialogContent>
@@ -80,6 +85,19 @@ export function AnalysisHistory() {
   const [search, setSearch] = useState("");
   const [profileId, setProfileId] = useState<string>("");
   const [viewing, setViewing] = useState<Analysis | null>(null);
+  const queryClient = useQueryClient();
+
+  const retry = useMutation({
+    mutationFn: (id: string) => analysisApi.retry(id),
+    onSuccess: async (updated) => {
+      toast[updated.record_status === "SUCCESS" ? "success" : "error"](
+        updated.record_status === "SUCCESS" ? "Recorded to Google Sheet" : "Retry failed again",
+      );
+      await queryClient.invalidateQueries({ queryKey: ["analyses"] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof ApiError ? error.message : "Retry failed"),
+  });
 
   const { data: profiles } = useQuery({
     queryKey: ["profiles"],
@@ -159,9 +177,21 @@ export function AnalysisHistory() {
                     <Badge variant={STATUS_VARIANT[a.record_status]}>{a.record_status}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => setViewing(a)}>
-                      View
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      {a.record_status === "FAILED" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={retry.isPending}
+                          onClick={() => retry.mutate(a.id)}
+                        >
+                          Retry
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => setViewing(a)}>
+                        View
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

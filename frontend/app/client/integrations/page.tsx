@@ -26,6 +26,89 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api";
 import { integrationsApi } from "@/lib/integrations-api";
 
+function GoogleIntegrationCard() {
+  const queryClient = useQueryClient();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["integrations", "google"],
+    queryFn: integrationsApi.getGoogle,
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("google");
+    if (!result) return;
+    if (result === "connected") toast.success("Google account connected");
+    if (result === "error") toast.error("Couldn't connect Google account");
+    window.history.replaceState(null, "", window.location.pathname);
+    queryClient.invalidateQueries({ queryKey: ["integrations", "google"] });
+    // Runs once on mount to consume the OAuth redirect's query params.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const connect = useMutation({
+    mutationFn: integrationsApi.getGoogleAuthorizeUrl,
+    onSuccess: (data) => {
+      window.location.href = data.authorize_url;
+    },
+    onError: (error) =>
+      toast.error(error instanceof ApiError ? error.message : "Couldn't start Google sign-in"),
+  });
+
+  const disconnect = useMutation({
+    mutationFn: integrationsApi.disconnectGoogle,
+    onSuccess: async () => {
+      toast.success("Google account disconnected");
+      await queryClient.invalidateQueries({ queryKey: ["integrations", "google"] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof ApiError ? error.message : "Couldn't disconnect"),
+  });
+
+  return (
+    <Card className="mt-6 max-w-lg">
+      <CardHeader>
+        <CardTitle>Google</CardTitle>
+        <CardDescription>
+          Used to record saved analyses into a spreadsheet — see Config.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading && <Skeleton className="h-16" />}
+        {isError && <p className="text-sm text-destructive">Couldn&apos;t load Google status.</p>}
+        {data && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Status:</span>
+              {data.connected ? (
+                <Badge variant={data.status === "NEEDS_RECONNECT" ? "destructive" : "default"}>
+                  {data.status === "NEEDS_RECONNECT" ? "Needs reconnect" : data.email}
+                </Badge>
+              ) : (
+                <Badge variant="secondary">Not connected</Badge>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button disabled={connect.isPending} onClick={() => connect.mutate()}>
+                {data.connected ? "Reconnect Google" : "Connect Google"}
+              </Button>
+              {data.connected && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={disconnect.isPending}
+                  onClick={() => disconnect.mutate()}
+                >
+                  Disconnect
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const formSchema = z.object({
   api_key: z.string().min(1, "API key is required."),
   model: z.string().min(1, "Model is required."),
@@ -90,7 +173,8 @@ export default function ClientIntegrationsPage() {
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Integrations</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Connect the OpenAI key used for JD analysis. Google Sheets connection lands in Phase 7.
+        Connect the OpenAI key used for JD analysis and the Google account used to record
+        analyses.
       </p>
 
       <Card className="mt-6 max-w-lg">
@@ -178,6 +262,8 @@ export default function ClientIntegrationsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <GoogleIntegrationCard />
     </div>
   );
 }
