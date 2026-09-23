@@ -1,10 +1,11 @@
+import { AnalysisHistory } from "@/components/resume-selector/history";
+import { ResumeSelector } from "@/components/resume-selector/resume-selector";
+
 export default function BidderResumeSelectorPage() {
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Resume Selector</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        JD analysis and profile matching land in Phase 6.
-      </p>
+      <ResumeSelector />
+      <AnalysisHistory />
     </div>
   );
 }

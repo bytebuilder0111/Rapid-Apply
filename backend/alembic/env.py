@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy.ext.asyncio import AsyncEngine, async_engine_from_config
 
 from app import models  # noqa: F401  registers tables on Base.metadata
+from app.analysis import models as analysis_models  # noqa: F401  registers tables
 from app.config import settings
 from app.db import Base
 from app.integrations import models as integration_models  # noqa: F401  registers tables

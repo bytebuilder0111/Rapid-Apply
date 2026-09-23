@@ -1,0 +1,81 @@
+from datetime import date
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.analysis import service
+from app.analysis.schemas import AnalysisOut, AnalyzeRequest, AnalyzeResponse, SaveAnalysisRequest
+from app.db import get_db
+from app.deps import get_current_user, require_roles, scope_client_id
+from app.models import Role, User
+
+router = APIRouter(dependencies=[Depends(require_roles(Role.CLIENT, Role.BIDDER))])
+
+
+@router.post("/analyze", response_model=AnalyzeResponse)
+async def analyze(
+    payload: AnalyzeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AnalyzeResponse:
+    client_id = scope_client_id(user)
+    assert client_id is not None
+    outcome, duplicate_reason = await service.analyze(
+        db, user=user, client_id=client_id, payload=payload
+    )
+    return AnalyzeResponse(
+        result=outcome.result,
+        model=outcome.model,
+        prompt_version=outcome.prompt_version,
+        tokens=outcome.tokens,
+        latency_ms=outcome.latency_ms,
+        duplicate_warning=duplicate_reason is not None,
+        duplicate_reason=duplicate_reason,
+    )
+
+
+@router.post("", response_model=AnalysisOut, status_code=201)
+async def save_analysis(
+    payload: SaveAnalysisRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AnalysisOut:
+    client_id = scope_client_id(user)
+    assert client_id is not None
+    return await service.save_analysis(db, user=user, client_id=client_id, payload=payload)
+
+
+@router.get("", response_model=list[AnalysisOut])
+async def list_analyses(
+    search: str | None = Query(default=None),
+    profile_id: UUID | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[AnalysisOut]:
+    client_id = scope_client_id(user)
+    assert client_id is not None
+    # A bidder sees only their own analyses; the owning client sees all of them.
+    created_by = user.id if user.role == Role.BIDDER else None
+    return await service.list_analyses(
+        db,
+        client_id=client_id,
+        created_by=created_by,
+        search=search,
+        profile_id=profile_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
+@router.get("/{analysis_id}", response_model=AnalysisOut)
+async def get_analysis(
+    analysis_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AnalysisOut:
+    client_id = scope_client_id(user)
+    assert client_id is not None
+    return await service.get_analysis(db, analysis_id, client_id=client_id)
