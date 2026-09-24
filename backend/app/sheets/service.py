@@ -236,7 +236,7 @@ def _build_row(analysis: Analysis, profile_name: str, recorded_by: str) -> list[
         analysis.company_name,
         analysis.position_name,
         analysis.job_link or "",
-        result.get("main_backend_skill", ""),
+        result.get("main_tech_stack") or result.get("main_backend_skill", ""),
         result.get("backend_framework") or "",
         ", ".join(result.get("secondary_skills", [])),
         result.get("seniority", ""),

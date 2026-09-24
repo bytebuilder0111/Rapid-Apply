@@ -12,8 +12,8 @@ from openai import (
     RateLimitError,
 )
 
-from app.ai.prompts import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
-from app.ai.schemas import AnalysisResult
+from app.ai.prompts import PROMPT_VERSION, SYSTEM_PROMPT, allowed_stacks_from, build_user_prompt
+from app.ai.schemas import AnalysisResult, response_model_for
 from app.errors import AppError
 
 
@@ -40,6 +40,17 @@ async def test_api_key(api_key: str, model: str) -> None:
         raise _map_openai_error(exc, model=model) from exc
 
 
+def reconcile_with_stack(result: AnalysisResult, profiles: list[dict]) -> AnalysisResult:
+    """Guarantees the recommended profile contains main_tech_stack. The model is told to do
+    this, but if it doesn't, keep its stack choice and swap in a profile that has that stack."""
+    if result.main_tech_stack is None:
+        return result
+    candidates = [p["id"] for p in profiles if result.main_tech_stack in p["tech_stacks"]]
+    if result.recommended_profile_id in candidates or not candidates:
+        return result
+    return result.model_copy(update={"recommended_profile_id": candidates[0]})
+
+
 class AnalysisOutcome:
     def __init__(self, result: AnalysisResult, tokens: int | None, latency_ms: int) -> None:
         self.result = result
@@ -58,6 +69,7 @@ async def analyze_job_description(
     Retries once on invalid JSON or an unknown recommended_profile_id (see docs/SPEC.md).
     """
     valid_ids = {p["id"] for p in profiles}
+    response_model = response_model_for(allowed_stacks_from(profiles))
     client = AsyncOpenAI(api_key=api_key)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -70,7 +82,7 @@ async def analyze_job_description(
         started = time.monotonic()
         try:
             completion = await client.chat.completions.parse(
-                model=model, messages=messages, response_format=AnalysisResult
+                model=model, messages=messages, response_format=response_model
             )
         except OpenAIError as exc:
             raise _map_openai_error(exc, model=model) from exc
@@ -83,7 +95,10 @@ async def analyze_job_description(
         if is_valid:
             assert parsed is not None
             tokens = completion.usage.total_tokens if completion.usage else None
-            outcome = AnalysisOutcome(parsed, tokens, latency_ms)
+            result = reconcile_with_stack(
+                AnalysisResult.model_validate(parsed.model_dump()), profiles
+            )
+            outcome = AnalysisOutcome(result, tokens, latency_ms)
             outcome.model = model
             return outcome
 

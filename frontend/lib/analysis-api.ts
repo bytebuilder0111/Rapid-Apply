@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 export type Seniority = "junior" | "mid" | "senior" | "lead" | "unknown";
 
 export type AnalysisResult = {
+  /** Always one of the client's profile tech stacks, or null when none fit the JD. */
+  main_tech_stack?: string | null;
   main_backend_skill: string;
   backend_framework: string | null;
   secondary_skills: string[];

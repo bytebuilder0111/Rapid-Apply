@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from app.ai.schemas import AnalysisResult
 from app.analysis.models import RecordStatus
@@ -57,3 +57,9 @@ class AnalysisOut(BaseModel):
     record_attempts: int
     record_error: str | None
     created_at: datetime
+
+    @field_serializer("result")
+    def _serialize_result(self, result: AnalysisResult) -> dict:
+        # Rows saved before a field existed (e.g. main_tech_stack) omit it rather than
+        # reporting a default, so the UI can tell "not analyzed for" from "no match".
+        return result.model_dump(exclude_unset=True)

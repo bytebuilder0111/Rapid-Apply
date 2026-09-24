@@ -23,10 +23,28 @@ export function ResultCard({
         <CardTitle>Analysis result</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge>{result.main_backend_skill}</Badge>
-          {result.backend_framework && <Badge variant="secondary">{result.backend_framework}</Badge>}
-          <Badge variant="secondary">{SENIORITY_LABEL[result.seniority]}</Badge>
+        {result.main_tech_stack !== undefined && (
+          <div className="rounded-md border bg-muted/40 p-3">
+            <p className="text-sm font-medium text-muted-foreground">Main tech stack</p>
+            {result.main_tech_stack ? (
+              <p className="mt-1 text-lg font-semibold">{result.main_tech_stack}</p>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">
+                None of your profiles&apos; tech stacks match this job
+              </p>
+            )}
+          </div>
+        )}
+
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">As written in the JD</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{result.main_backend_skill}</Badge>
+            {result.backend_framework && (
+              <Badge variant="secondary">{result.backend_framework}</Badge>
+            )}
+            <Badge variant="outline">{SENIORITY_LABEL[result.seniority]}</Badge>
+          </div>
         </div>
 
         {result.secondary_skills.length > 0 && (
