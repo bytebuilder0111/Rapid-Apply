@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { ResultCard } from "@/components/resume-selector/result-card";
+import { isDismatched, ResultCard } from "@/components/resume-selector/result-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,7 +50,7 @@ function ViewAnalysisDialog({
   analysis: Analysis;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  profileName: string | null;
+  profileName: (id: string) => string | undefined;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -74,7 +74,7 @@ function ViewAnalysisDialog({
           {analysis.record_status === "FAILED" && analysis.record_error && (
             <p className="text-sm text-destructive">Sheet write failed: {analysis.record_error}</p>
           )}
-          <ResultCard result={analysis.result} recommendedProfileName={profileName} />
+          <ResultCard result={analysis.result} profileName={profileName} />
         </div>
       </DialogContent>
     </Dialog>
@@ -128,7 +128,7 @@ export function AnalysisHistory() {
         />
         <Select value={profileId} onValueChange={(v) => setProfileId(v ?? "")}>
           <SelectTrigger className="w-48">
-            <SelectValue placeholder="Filter by profile" />
+            <SelectValue placeholder="Filter by resume used" />
           </SelectTrigger>
           <SelectContent>
             {(profiles ?? []).map((p) => (
@@ -150,8 +150,8 @@ export function AnalysisHistory() {
                 <TableHead>Date</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Position</TableHead>
-                <TableHead>Main stack</TableHead>
-                <TableHead>Profile</TableHead>
+                <TableHead>Best fit</TableHead>
+                <TableHead>Resume used</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -170,12 +170,12 @@ export function AnalysisHistory() {
                   <TableCell className="font-medium">{a.company_name}</TableCell>
                   <TableCell>{a.position_name}</TableCell>
                   <TableCell>
-                    {a.result.main_tech_stack === undefined ? (
-                      "—"
-                    ) : a.result.main_tech_stack ? (
-                      a.result.main_tech_stack
-                    ) : (
+                    {a.result.recommended_profile_id ? (
+                      (profileNameById.get(a.result.recommended_profile_id) ?? "—")
+                    ) : isDismatched(a.result) ? (
                       <Badge variant="destructive">Dismatched JD</Badge>
+                    ) : (
+                      "—"
                     )}
                   </TableCell>
                   <TableCell>
@@ -215,11 +215,7 @@ export function AnalysisHistory() {
           analysis={viewing}
           open={Boolean(viewing)}
           onOpenChange={(open) => !open && setViewing(null)}
-          profileName={
-            viewing.selected_profile_id
-              ? (profileNameById.get(viewing.selected_profile_id) ?? null)
-              : null
-          }
+          profileName={(id) => profileNameById.get(id)}
         />
       )}
     </div>

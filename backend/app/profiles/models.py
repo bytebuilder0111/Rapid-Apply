@@ -9,6 +9,9 @@ from app.db import Base
 
 
 class Profile(Base):
+    """A "resume type": one of the client's resumes. Only the AI summary of the uploaded
+    file is kept (not the file itself), which is what JD matching compares against."""
+
     __tablename__ = "profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -16,11 +19,14 @@ class Profile(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # One or more stacks (each validated against the admin-managed tech_stacks table —
-    # see app/profiles/service.py). The AI analysis phase picks the best match per JD.
-    tech_stacks: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    # Key skills extracted from the uploaded resume (at most ~8).
     skills: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resume_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resume_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resume_uploaded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

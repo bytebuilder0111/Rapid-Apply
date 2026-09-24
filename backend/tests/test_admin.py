@@ -42,8 +42,6 @@ async def test_admin_client_and_bidder_crud_flow(
         headers=client_login,
         json={
             "name": "Python/Django",
-            "tech_stacks": ["Python/Django"],
-            "skills": ["Django"],
         },
     )
     assert profile_resp.status_code == 201, profile_resp.text
@@ -99,7 +97,7 @@ async def test_bidder_requires_profile_owned_by_same_client(
     profile_resp = await client.post(
         "/api/v1/profiles",
         headers=await login_headers(client, email="clientb@example.com"),
-        json={"name": "Node/NestJS", "tech_stacks": ["Node.js/NestJS"]},
+        json={"name": "Node/NestJS"},
     )
     assert profile_resp.status_code == 201
     other_clients_profile_id = profile_resp.json()["id"]
@@ -129,7 +127,7 @@ async def test_soft_deleting_client_deactivates_its_bidders(
     profile_resp = await client.post(
         "/api/v1/profiles",
         headers=await login_headers(client, email="clientc@example.com"),
-        json={"name": "Go", "tech_stacks": ["Go"]},
+        json={"name": "Go"},
     )
     profile_id = profile_resp.json()["id"]
     bidder_resp = await client.post(

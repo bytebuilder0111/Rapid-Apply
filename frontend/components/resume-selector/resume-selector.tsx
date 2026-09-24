@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { useAuth } from "@/components/layout/auth-provider";
-import { ResultCard } from "@/components/resume-selector/result-card";
+import { isDismatched, ResultCard } from "@/components/resume-selector/result-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,9 +40,9 @@ function errorMessage(error: unknown, fallback: string): string {
 
 const ANALYZE_STEPS = [
   { label: "Sending job description", untilSec: 1 },
-  { label: "AI is reading the job description", untilSec: 6 },
-  { label: "Identifying the core tech stack", untilSec: 12 },
-  { label: "Matching against your profiles", untilSec: Infinity },
+  { label: "AI is reading the job description", untilSec: 4 },
+  { label: "Summarizing the job description", untilSec: 8 },
+  { label: "Comparing with your resumes", untilSec: Infinity },
 ];
 const EXPECTED_SECONDS = 15;
 
@@ -146,8 +146,8 @@ export function ResumeSelector() {
       });
       setAnalyzeOutput(output);
       setSelectedProfileId(output.result.recommended_profile_id ?? "");
-      if (output.result.main_tech_stack === null) {
-        toast.warning("Dismatched JD: no matching tech stack in your profiles.");
+      if (isDismatched(output.result)) {
+        toast.warning("Dismatched JD: none of your resumes fit this job.");
       }
       if (output.duplicate_warning) {
         toast.warning(output.duplicate_reason ?? "This job was already analyzed.");
@@ -187,8 +187,7 @@ export function ResumeSelector() {
     onError: (error) => toast.error(errorMessage(error, "Couldn't save analysis")),
   });
 
-  const recommendedProfileName =
-    selectableProfiles.find((p) => p.id === selectedProfileId)?.name ?? null;
+  const profileName = (id: string) => allProfiles?.find((p) => p.id === id)?.name;
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -196,8 +195,8 @@ export function ResumeSelector() {
         <CardHeader>
           <CardTitle>Resume Selector</CardTitle>
           <CardDescription>
-            Paste a job description to identify the main backend skill and the best-matching
-            profile.
+            Paste a job description. The AI summarizes it and picks which of your resumes fits
+            best.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -239,10 +238,10 @@ export function ResumeSelector() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label>Profile</Label>
+              <Label>Resume to use</Label>
               <Select value={selectedProfileId} onValueChange={(v) => setSelectedProfileId(v ?? "")}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a profile" />
+                  <SelectValue placeholder="Pre-filled with the best fit after Analyze" />
                 </SelectTrigger>
                 <SelectContent>
                   {selectableProfiles.map((p) => (
@@ -279,10 +278,7 @@ export function ResumeSelector() {
           <AnalyzingPanel />
         ) : analyzeOutput ? (
           <div className="flex flex-col gap-2">
-            <ResultCard
-              result={analyzeOutput.result}
-              recommendedProfileName={recommendedProfileName}
-            />
+            <ResultCard result={analyzeOutput.result} profileName={profileName} />
             <p className="text-xs text-muted-foreground">
               Not saved yet: click <span className="font-medium">Save</span> to add it to History
               below.

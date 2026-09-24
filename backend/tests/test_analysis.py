@@ -1,11 +1,14 @@
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.schemas import AnalysisResult
 from app.ai.service import AnalysisOutcome
 from app.models import Role
+from app.profiles.models import Profile
 
 from .conftest import create_user, login_headers
 
@@ -39,9 +42,68 @@ async def _setup_client_with_key_and_profile(
     profile_resp = await client.post(
         "/api/v1/profiles",
         headers=headers,
-        json={"name": "Python profile", "tech_stacks": ["Go"]},
+        json={"name": "Python profile"},
     )
-    return headers, profile_resp.json()["id"]
+    profile_id = profile_resp.json()["id"]
+    # Stands in for an uploaded resume (upload itself is covered in test_profiles.py).
+    await db_session.execute(
+        update(Profile)
+        .where(Profile.id == UUID(profile_id))
+        .values(resume_summary="Senior Python/Django backend engineer.", skills=["Python"])
+    )
+    await db_session.commit()
+    return headers, profile_id
+
+
+async def test_analyze_requires_an_uploaded_resume(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    await create_user(db_session, email="noresume@example.com", role=Role.CLIENT)
+    headers = await login_headers(client, email="noresume@example.com")
+    await client.put(
+        "/api/v1/integrations/openai",
+        headers=headers,
+        json={"api_key": "sk-testkey1234", "model": "gpt-4o-mini"},
+    )
+    await client.post("/api/v1/profiles", headers=headers, json={"name": "No file yet"})
+
+    analyze = AsyncMock()
+    with patch("app.analysis.service.analyze_job_description", new=analyze):
+        resp = await client.post(
+            "/api/v1/analyses/analyze",
+            headers=headers,
+            json={"company_name": "Acme", "position_name": "Eng", "job_description": "A JD"},
+        )
+
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "no_resumes"
+    analyze.assert_not_called()
+
+
+async def test_analyze_sends_resume_summaries_to_ai(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    headers, profile_id = await _setup_client_with_key_and_profile(
+        client, db_session, email="summaryctx@example.com"
+    )
+
+    analyze = AsyncMock(return_value=_outcome(recommended_profile_id=profile_id))
+    with patch("app.analysis.service.analyze_job_description", new=analyze):
+        resp = await client.post(
+            "/api/v1/analyses/analyze",
+            headers=headers,
+            json={"company_name": "Acme", "position_name": "Eng", "job_description": "A JD"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert analyze.call_args.kwargs["profiles"] == [
+        {
+            "id": profile_id,
+            "name": "Python profile",
+            "summary": "Senior Python/Django backend engineer.",
+            "skills": ["Python"],
+        }
+    ]
 
 
 async def test_analyze_requires_api_key(client: AsyncClient, db_session: AsyncSession) -> None:
@@ -141,7 +203,7 @@ async def test_bidder_save_forces_own_assigned_profile(
     other_profile_resp = await client.post(
         "/api/v1/profiles",
         headers=headers,
-        json={"name": "Other profile", "tech_stacks": ["Go"]},
+        json={"name": "Other profile"},
     )
     other_profile_id = other_profile_resp.json()["id"]
 

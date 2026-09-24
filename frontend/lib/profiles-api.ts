@@ -9,4 +9,9 @@ export const profilesApi = {
   create: (input: ProfileInput) => api.post<Profile>("/profiles", input),
   update: (id: string, input: ProfileUpdateInput) => api.patch<Profile>(`/profiles/${id}`, input),
   remove: (id: string) => api.delete<void>(`/profiles/${id}`),
+  uploadResume: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post<Profile>(`/profiles/${id}/resume`, form);
+  },
 };

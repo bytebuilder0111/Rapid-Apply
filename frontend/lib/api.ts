@@ -36,7 +36,9 @@ async function parseError(response: Response): Promise<never> {
 async function rawRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, skipAuth } = options;
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isForm = body instanceof FormData;
+  // For FormData the browser sets the multipart Content-Type (with its boundary) itself.
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
 
   const token = getAccessToken();
   if (token && !skipAuth) headers.Authorization = `Bearer ${token}`;
@@ -45,7 +47,7 @@ async function rawRequest<T>(path: string, options: RequestOptions = {}): Promis
     method,
     headers,
     credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isForm ? body : body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   if (!response.ok) await parseError(response);

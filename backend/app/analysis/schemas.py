@@ -60,6 +60,6 @@ class AnalysisOut(BaseModel):
 
     @field_serializer("result")
     def _serialize_result(self, result: AnalysisResult) -> dict:
-        # Rows saved before a field existed (e.g. main_tech_stack) omit it rather than
-        # reporting a default, so the UI can tell "not analyzed for" from "no match".
+        # Rows saved before a field existed (e.g. jd_summary) omit it rather than reporting a
+        # default, so the UI can tell an older analysis from a real empty value.
         return result.model_dump(exclude_unset=True)

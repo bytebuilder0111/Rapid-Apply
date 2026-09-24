@@ -22,11 +22,16 @@ def normalize_jd_hash(job_description: str) -> str:
 
 
 async def _active_profiles_context(db: AsyncSession, client_id: UUID) -> list[dict]:
+    """The client's active resume types that have an uploaded resume summary to match on."""
     result = await db.execute(
-        select(Profile).where(Profile.client_id == client_id, Profile.is_active.is_(True))
+        select(Profile).where(
+            Profile.client_id == client_id,
+            Profile.is_active.is_(True),
+            Profile.resume_summary.is_not(None),
+        )
     )
     return [
-        {"id": str(p.id), "name": p.name, "tech_stacks": p.tech_stacks}
+        {"id": str(p.id), "name": p.name, "summary": p.resume_summary, "skills": p.skills}
         for p in result.scalars().all()
     ]
 
@@ -57,6 +62,12 @@ async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: Ana
     api_key = await get_decrypted_key_for_client(db, client_id)
 
     profiles = await _active_profiles_context(db, client_id)
+    if not profiles:
+        raise AppError(
+            "no_resumes",
+            "No resumes to compare against yet. Upload a resume under Resume Types first.",
+            400,
+        )
     outcome = await analyze_job_description(
         api_key=api_key,
         model=ai_settings.model,

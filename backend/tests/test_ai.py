@@ -1,68 +1,113 @@
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
 import pytest
 from openai.lib._pydantic import to_strict_json_schema
-from pydantic import ValidationError
 
-from app.ai.prompts import allowed_stacks_from, build_user_prompt
-from app.ai.schemas import AnalysisResult, response_model_for
-from app.ai.service import reconcile_with_stack
+from app.ai.prompts import build_user_prompt
+from app.ai.schemas import AnalysisResponse, AnalysisResult, ResumeSummary
+from app.ai.service import analyze_job_description, summarize_resume
+from app.analysis.models import RecordStatus
+from app.analysis.schemas import AnalysisOut
+from app.errors import AppError
 
 PROFILES = [
-    {"id": "p1", "name": "Python dev", "tech_stacks": ["Python/Django", "Go"]},
-    {"id": "p2", "name": "Node dev", "tech_stacks": ["Node.js/NestJS", "Go"]},
+    {
+        "id": "p1",
+        "name": "Python Backend",
+        "summary": "Senior backend engineer, Python/Django APIs.",
+        "skills": ["Python", "Django"],
+    },
+    {
+        "id": "p2",
+        "name": "iOS",
+        "summary": "Mobile engineer building iOS apps in Swift.",
+        "skills": ["Swift", "SwiftUI"],
+    },
 ]
 
 
-def _result(**overrides) -> AnalysisResult:
+def _fake_openai(*parsed_results) -> MagicMock:
+    """An AsyncOpenAI stand-in whose parse() returns each given parsed value in turn."""
+    completions = [
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(parsed=p))],
+            usage=SimpleNamespace(total_tokens=100),
+        )
+        for p in parsed_results
+    ]
+    client = MagicMock()
+    client.chat.completions.parse = AsyncMock(side_effect=completions)
+    return MagicMock(return_value=client)
+
+
+def _response(**overrides) -> AnalysisResponse:
     base = {
-        "main_tech_stack": "Node.js/NestJS",
-        "main_backend_skill": "Node.js",
+        "jd_summary": "Senior backend role building Python APIs.",
+        "role_type": "backend",
+        "main_backend_skill": "Python",
         "seniority": "senior",
-        "recommended_profile_id": "p2",
-        "confidence": 0.8,
-        "reasoning": "r",
+        "recommended_profile_id": "p1",
+        "confidence": 0.9,
+        "reasoning": "Python backend resume fits.",
     }
-    return AnalysisResult(**(base | overrides))
+    return AnalysisResponse(**(base | overrides))
 
 
-def test_allowed_stacks_are_deduplicated_in_order() -> None:
-    assert allowed_stacks_from(PROFILES) == ["Python/Django", "Go", "Node.js/NestJS"]
-
-
-def test_prompt_lists_allowed_stacks() -> None:
+def test_prompt_lists_each_resume_summary_and_skills() -> None:
     prompt = build_user_prompt("JD text", PROFILES)
-    assert "Allowed tech stacks:\n- Python/Django\n- Go\n- Node.js/NestJS" in prompt
+    assert "- id=p1 name='Python Backend'" in prompt
+    assert "summary: Mobile engineer building iOS apps in Swift." in prompt
+    assert "key_skills: Swift, SwiftUI" in prompt
+    assert prompt.endswith("Job description:\nJD text")
 
 
-def test_response_model_restricts_stack_to_profile_list() -> None:
-    model = response_model_for(["Python/Django", "Go"])
-    base = _result(role_type="backend").model_dump()
-
-    assert model.model_validate(base | {"main_tech_stack": "Go"}).main_tech_stack == "Go"
-    assert model.model_validate(base | {"main_tech_stack": None}).main_tech_stack is None
-    with pytest.raises(ValidationError):
-        model.model_validate(base | {"main_tech_stack": "Rust"})
-
-
-def test_response_model_is_valid_openai_strict_schema() -> None:
-    schema = to_strict_json_schema(response_model_for(["Python/Django", "Go"]))
-    stack_schema = schema["properties"]["main_tech_stack"]
-    enums = [opt.get("enum") for opt in stack_schema.get("anyOf", [stack_schema])]
-    assert ["Python/Django", "Go"] in enums
-    assert "main_tech_stack" in schema["required"]
+def test_response_schema_is_valid_for_openai_and_summarizes_first() -> None:
+    schema = to_strict_json_schema(AnalysisResponse)
+    props = list(schema["properties"])
+    assert props[:2] == ["jd_summary", "role_type"]
+    assert props.index("role_type") < props.index("recommended_profile_id")
+    assert {"jd_summary", "role_type"} <= set(schema["required"])
+    to_strict_json_schema(ResumeSummary)
 
 
-def test_response_model_without_profiles_forces_null_stack() -> None:
-    schema = to_strict_json_schema(response_model_for([]))
-    assert schema["properties"]["main_tech_stack"]["type"] == "null"
+async def test_summarize_resume_trims_skills_to_eight() -> None:
+    parsed = ResumeSummary(summary=" Backend dev. ", key_skills=[f"s{i}" for i in range(12)])
+    with patch("app.ai.service.AsyncOpenAI", _fake_openai(parsed)):
+        result = await summarize_resume(api_key="k", model="gpt-4o-mini", resume_text="cv")
+    assert result.summary == "Backend dev."
+    assert result.key_skills == [f"s{i}" for i in range(8)]
 
 
-def test_old_saved_result_omits_main_tech_stack() -> None:
-    from datetime import UTC, datetime
-    from uuid import uuid4
+async def test_summarize_resume_retries_once_then_errors() -> None:
+    with patch("app.ai.service.AsyncOpenAI", _fake_openai(None, None)):
+        with pytest.raises(AppError) as exc:
+            await summarize_resume(api_key="k", model="gpt-4o-mini", resume_text="cv")
+    assert exc.value.code == "invalid_ai_response"
 
-    from app.analysis.models import RecordStatus
-    from app.analysis.schemas import AnalysisOut
 
+async def test_analyze_retries_on_unknown_profile_id() -> None:
+    fake = _fake_openai(_response(recommended_profile_id="nope"), _response())
+    with patch("app.ai.service.AsyncOpenAI", fake):
+        outcome = await analyze_job_description(
+            api_key="k", model="gpt-4o-mini", job_description="JD", profiles=PROFILES
+        )
+    assert outcome.result.recommended_profile_id == "p1"
+    assert outcome.result.jd_summary == "Senior backend role building Python APIs."
+    assert fake.return_value.chat.completions.parse.await_count == 2
+
+
+async def test_analyze_allows_dismatched_jd() -> None:
+    with patch("app.ai.service.AsyncOpenAI", _fake_openai(_response(recommended_profile_id=None))):
+        outcome = await analyze_job_description(
+            api_key="k", model="gpt-4o-mini", job_description="JD", profiles=PROFILES
+        )
+    assert outcome.result.recommended_profile_id is None
+
+
+def test_old_saved_result_omits_new_fields() -> None:
     def out(result: dict) -> dict:
         return AnalysisOut(
             id=uuid4(),
@@ -86,39 +131,10 @@ def test_old_saved_result_omits_main_tech_stack() -> None:
             created_at=datetime.now(UTC),
         ).model_dump(mode="json")["result"]
 
-    old_row = _result().model_dump(exclude={"main_tech_stack"})
-    assert "main_tech_stack" not in out(old_row)
-    assert out(_result(main_tech_stack=None).model_dump())["main_tech_stack"] is None
-
-
-def test_reconcile_keeps_consistent_recommendation() -> None:
-    result = _result()
-    assert reconcile_with_stack(result, PROFILES).recommended_profile_id == "p2"
-
-
-def test_reconcile_swaps_profile_that_lacks_the_stack() -> None:
-    result = _result(recommended_profile_id="p1")
-    assert reconcile_with_stack(result, PROFILES).recommended_profile_id == "p2"
-
-
-def test_reconcile_dismatched_jd_has_no_recommendation() -> None:
-    result = _result(main_tech_stack=None, recommended_profile_id="p1")
-    assert reconcile_with_stack(result, PROFILES).recommended_profile_id is None
-
-
-def test_reconcile_non_backend_role_never_matches() -> None:
-    # e.g. a mobile JD listing "Java" for Android must not match a backend "Java" stack.
-    result = _result(role_type="mobile", main_tech_stack="Go", recommended_profile_id="p1")
-    reconciled = reconcile_with_stack(result, PROFILES)
-    assert reconciled.main_tech_stack is None
-    assert reconciled.recommended_profile_id is None
-
-
-def test_reconcile_fullstack_role_can_match() -> None:
-    result = _result(role_type="fullstack")
-    assert reconcile_with_stack(result, PROFILES).main_tech_stack == "Node.js/NestJS"
-
-
-def test_role_type_is_generated_before_stack() -> None:
-    props = list(to_strict_json_schema(response_model_for(["Go"]))["properties"])
-    assert props.index("role_type") < props.index("main_tech_stack")
+    old_row = AnalysisResult(
+        main_backend_skill="Java", seniority="senior", confidence=0.7, reasoning="r"
+    ).model_dump(exclude={"jd_summary", "role_type"})
+    assert "jd_summary" not in out(old_row)
+    assert (
+        out(_response().model_dump())["jd_summary"] == "Senior backend role building Python APIs."
+    )

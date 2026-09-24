@@ -5,9 +5,10 @@ export type Seniority = "junior" | "mid" | "senior" | "lead" | "unknown";
 export type RoleType = "backend" | "fullstack" | "mobile" | "frontend" | "data" | "devops" | "other";
 
 export type AnalysisResult = {
+  /** Absent on analyses saved before resume-based matching. */
+  jd_summary?: string | null;
   role_type?: RoleType | null;
-  /** Always one of the client's profile tech stacks, or null when none fit the JD. */
-  main_tech_stack?: string | null;
+  /** The job's core language/tech as the JD names it. */
   main_backend_skill: string;
   backend_framework: string | null;
   secondary_skills: string[];

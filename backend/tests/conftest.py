@@ -35,19 +35,6 @@ from app.auth.service import hash_password  # noqa: E402
 from app.db import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Role, User  # noqa: E402
-from app.tech_stacks.models import TechStack  # noqa: E402
-
-# create_all (below) builds an empty schema; the real seed data lives in the 0003
-# migration, which tests don't run. Mirror it here so profile tests have stacks to use.
-SEED_TECH_STACKS = [
-    "Python/Django",
-    "Node.js/NestJS",
-    "Java/Spring",
-    "Go",
-    ".NET",
-    "PHP/Laravel",
-    "Ruby/Rails",
-]
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -55,9 +42,6 @@ async def _prepare_database() -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    async with SessionLocal() as session:
-        session.add_all([TechStack(name=name) for name in SEED_TECH_STACKS])
-        await session.commit()
     yield
     await engine.dispose()
 

@@ -8,8 +8,6 @@ from app.errors import register_exception_handlers
 from app.integrations.router import router as integrations_router
 from app.profiles.router import router as profiles_router
 from app.sheets.router import router as sheets_router
-from app.tech_stacks.router import admin_router as tech_stacks_admin_router
-from app.tech_stacks.router import router as tech_stacks_router
 from app.users.admin_router import router as admin_router
 
 app = FastAPI(title="JD Analyzer API", version="0.1.0")
@@ -31,10 +29,6 @@ app.include_router(profiles_router, prefix="/api/v1/profiles", tags=["profiles"]
 app.include_router(integrations_router, prefix="/api/v1/integrations", tags=["integrations"])
 app.include_router(analysis_router, prefix="/api/v1/analyses", tags=["analysis"])
 app.include_router(sheets_router, prefix="/api/v1/sheet-configs", tags=["sheets"])
-app.include_router(tech_stacks_router, prefix="/api/v1/tech-stacks", tags=["tech-stacks"])
-app.include_router(
-    tech_stacks_admin_router, prefix="/api/v1/admin/tech-stacks", tags=["admin", "tech-stacks"]
-)
 
 
 @app.get("/health")

@@ -8,7 +8,7 @@ import { RoleGuard } from "@/components/layout/role-guard";
 const navItems: NavItem[] = [
   { label: "Resume Selector", href: "/client", icon: Wand2 },
   { label: "Config", href: "/client/config", icon: Settings },
-  { label: "Profiles", href: "/client/profiles", icon: FileText },
+  { label: "Resume Types", href: "/client/profiles", icon: FileText },
   { label: "Integrations", href: "/client/integrations", icon: Plug },
 ];
 

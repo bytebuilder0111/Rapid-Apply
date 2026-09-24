@@ -48,21 +48,26 @@ function ProfileRow({ profile, clientName }: { profile: Profile; clientName: str
   const remove = useMutation({
     mutationFn: () => profilesApi.remove(profile.id),
     onSuccess: async () => {
-      toast.success("Profile deleted");
+      toast.success("Resume type deleted");
       setDeleteOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["admin", "profiles"] });
     },
-    onError: (error) => toast.error(errorMessage(error, "Couldn't delete profile")),
+    onError: (error) => toast.error(errorMessage(error, "Couldn't delete resume type")),
   });
 
   return (
     <TableRow>
       <TableCell className="font-medium">{profile.name}</TableCell>
       <TableCell>{clientName}</TableCell>
-      <TableCell className="space-x-1">
-        {profile.tech_stacks.map((s) => (
-          <Badge key={s}>{s}</Badge>
-        ))}
+      <TableCell className="max-w-md">
+        {profile.resume_summary ? (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-muted-foreground">{profile.resume_filename}</span>
+            <span className="text-sm whitespace-normal">{profile.resume_summary}</span>
+          </div>
+        ) : (
+          <span className="text-sm text-muted-foreground">No resume uploaded</span>
+        )}
       </TableCell>
       <TableCell>
         {profile.is_active ? <Badge>Active</Badge> : <Badge variant="secondary">Inactive</Badge>}
@@ -78,7 +83,7 @@ function ProfileRow({ profile, clientName }: { profile: Profile; clientName: str
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {profile.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Bidders currently assigned to this profile will be unassigned. This can&apos;t be
+              Bidders assigned to this resume type will be unassigned. This can&apos;t be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -109,9 +114,9 @@ export default function AdminProfilesPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Resume Types</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        View and manage resume profiles across clients.
+        View and manage resume types across clients.
       </p>
 
       <div className="mt-4 max-w-xs">
@@ -131,11 +136,11 @@ export default function AdminProfilesPage() {
 
       <div className="mt-6 rounded-lg border">
         {!clientId && (
-          <p className="p-4 text-sm text-muted-foreground">Pick a client to view its profiles.</p>
+          <p className="p-4 text-sm text-muted-foreground">Pick a client to view its resume types.</p>
         )}
         {clientId && isLoading && <Skeleton className="m-4 h-32" />}
         {clientId && isError && (
-          <p className="p-4 text-sm text-destructive">Couldn&apos;t load profiles.</p>
+          <p className="p-4 text-sm text-destructive">Couldn&apos;t load resume types.</p>
         )}
         {clientId && data && (
           <Table>
@@ -143,7 +148,7 @@ export default function AdminProfilesPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Client</TableHead>
-                <TableHead>Tech Stacks</TableHead>
+                <TableHead>Resume</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -152,7 +157,7 @@ export default function AdminProfilesPage() {
               {data.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No profiles for this client.
+                    No resume types for this client.
                   </TableCell>
                 </TableRow>
               )}

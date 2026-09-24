@@ -1,10 +1,14 @@
+/** A "resume type": one of the client's resumes. Only its AI summary is stored, not the file. */
 export type Profile = {
   id: string;
   client_id: string;
   name: string;
-  tech_stacks: string[];
+  /** Key skills extracted from the uploaded resume. */
   skills: string[];
   notes: string | null;
+  resume_filename: string | null;
+  resume_summary: string | null;
+  resume_uploaded_at: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -12,16 +16,7 @@ export type Profile = {
 
 export type ProfileInput = {
   name: string;
-  tech_stacks: string[];
-  skills?: string[];
   notes?: string | null;
-};
-
-export type TechStack = {
-  id: string;
-  name: string;
-  is_active: boolean;
-  created_at: string;
 };
 
 export type ClientUser = {

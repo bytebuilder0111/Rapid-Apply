@@ -1,72 +1,93 @@
-import { TriangleAlert } from "lucide-react";
+import { FileCheck2, TriangleAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { AnalysisResult, RoleType } from "@/lib/analysis-api";
 
 const ROLE_LABEL: Record<RoleType, string> = {
-  backend: "Backend role",
-  fullstack: "Full-stack role",
-  mobile: "Mobile role",
-  frontend: "Frontend role",
-  data: "Data role",
-  devops: "DevOps role",
-  other: "Other role",
+  backend: "Backend",
+  fullstack: "Full-stack",
+  mobile: "Mobile",
+  frontend: "Frontend",
+  data: "Data",
+  devops: "DevOps",
+  other: "Other",
 };
-
-const NON_BACKEND_ROLES = new Set<RoleType>(["mobile", "frontend", "data", "devops"]);
 
 const SENIORITY_LABEL: Record<AnalysisResult["seniority"], string> = {
   junior: "Junior",
   mid: "Mid-level",
   senior: "Senior",
   lead: "Lead",
-  unknown: "Unknown",
+  unknown: "Seniority unknown",
 };
+
+/** True when the AI compared this JD against resume summaries and none fit. */
+export function isDismatched(result: AnalysisResult): boolean {
+  return result.jd_summary !== undefined && result.recommended_profile_id === null;
+}
 
 export function ResultCard({
   result,
-  recommendedProfileName,
+  profileName,
 }: {
   result: AnalysisResult;
-  recommendedProfileName: string | null;
+  /** Looks up a resume type's name by id (undefined if it was deleted). */
+  profileName: (id: string) => string | undefined;
 }) {
+  const bestName = result.recommended_profile_id
+    ? (profileName(result.recommended_profile_id) ?? "A deleted resume type")
+    : null;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Analysis result</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {result.main_tech_stack !== undefined &&
-          (result.main_tech_stack ? (
-            <div className="rounded-md border bg-muted/40 p-3">
-              <p className="text-sm font-medium text-muted-foreground">Main tech stack</p>
-              <p className="mt-1 text-lg font-semibold">{result.main_tech_stack}</p>
-            </div>
-          ) : (
-            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3">
-              <p className="flex items-center gap-2 text-lg font-semibold text-destructive">
-                <TriangleAlert className="size-5" />
-                Dismatched JD
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {result.role_type && NON_BACKEND_ROLES.has(result.role_type)
-                  ? `This is a ${ROLE_LABEL[result.role_type].toLowerCase()}, not a backend role.`
-                  : "This job's core tech stack isn't in any of your profiles."}
-              </p>
-            </div>
-          ))}
+        {bestName ? (
+          <div className="rounded-md border border-primary/40 bg-primary/5 p-3">
+            <p className="text-sm font-medium text-muted-foreground">Best-fit resume</p>
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold">
+              <FileCheck2 className="size-5 text-primary" />
+              {bestName}
+              <span className="text-sm font-normal text-muted-foreground">
+                {Math.round(result.confidence * 100)}% fit
+              </span>
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{result.reasoning}</p>
+          </div>
+        ) : isDismatched(result) ? (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3">
+            <p className="flex items-center gap-2 text-lg font-semibold text-destructive">
+              <TriangleAlert className="size-5" />
+              Dismatched JD
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{result.reasoning}</p>
+          </div>
+        ) : (
+          <div className="rounded-md border p-3">
+            <p className="text-sm font-medium text-muted-foreground">Recommended resume</p>
+            <p className="mt-1 text-sm text-muted-foreground">No confident match</p>
+            <p className="mt-1 text-sm text-muted-foreground">{result.reasoning}</p>
+          </div>
+        )}
+
+        {result.jd_summary && (
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">JD summary</p>
+            <p className="mt-1 text-sm leading-relaxed">{result.jd_summary}</p>
+          </div>
+        )}
 
         <div>
-          <p className="text-sm font-medium text-muted-foreground">As written in the JD</p>
+          <p className="text-sm font-medium text-muted-foreground">Job details</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            {result.role_type && <Badge variant="outline">{ROLE_LABEL[result.role_type]}</Badge>}
-            {result.main_backend_skill && (
-              <Badge variant="secondary">{result.main_backend_skill}</Badge>
+            {result.role_type && (
+              <Badge variant="outline">{ROLE_LABEL[result.role_type]} role</Badge>
             )}
-            {result.backend_framework && (
-              <Badge variant="secondary">{result.backend_framework}</Badge>
-            )}
+            {result.main_backend_skill && <Badge>{result.main_backend_skill}</Badge>}
+            {result.backend_framework && <Badge>{result.backend_framework}</Badge>}
             <Badge variant="outline">{SENIORITY_LABEL[result.seniority]}</Badge>
           </div>
         </div>
@@ -94,21 +115,6 @@ export function ResultCard({
             </ul>
           </div>
         )}
-
-        <div className="rounded-md border p-3">
-          <p className="text-sm font-medium text-muted-foreground">Recommended profile</p>
-          <p className="mt-1 text-sm">
-            {recommendedProfileName ?? (
-              <span className="text-muted-foreground">No confident match</span>
-            )}
-            {recommendedProfileName && (
-              <span className="ml-2 text-xs text-muted-foreground">
-                {Math.round(result.confidence * 100)}% confidence
-              </span>
-            )}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">{result.reasoning}</p>
-        </div>
       </CardContent>
     </Card>
   );

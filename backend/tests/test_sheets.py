@@ -23,9 +23,7 @@ async def _client_with_profile(
 ) -> tuple[dict, str]:
     await create_user(db_session, email=email, role=Role.CLIENT)
     headers = await login_headers(client, email=email)
-    profile_resp = await client.post(
-        "/api/v1/profiles", headers=headers, json={"name": "P1", "tech_stacks": ["Go"]}
-    )
+    profile_resp = await client.post("/api/v1/profiles", headers=headers, json={"name": "P1"})
     return headers, profile_resp.json()["id"]
 
 
@@ -78,9 +76,7 @@ async def test_bidder_cannot_configure_other_profile(
     )
     bidder_headers = await login_headers(client, email="bidderconfiguser@example.com")
 
-    other_resp = await client.post(
-        "/api/v1/profiles", headers=headers, json={"name": "P2", "tech_stacks": ["Go"]}
-    )
+    other_resp = await client.post("/api/v1/profiles", headers=headers, json={"name": "P2"})
     other_profile_id = other_resp.json()["id"]
 
     forbidden = await client.put(

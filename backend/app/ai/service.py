@@ -12,9 +12,17 @@ from openai import (
     RateLimitError,
 )
 
-from app.ai.prompts import PROMPT_VERSION, SYSTEM_PROMPT, allowed_stacks_from, build_user_prompt
-from app.ai.schemas import MATCHABLE_ROLE_TYPES, AnalysisResult, response_model_for
+from app.ai.prompts import (
+    PROMPT_VERSION,
+    RESUME_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    build_resume_prompt,
+    build_user_prompt,
+)
+from app.ai.schemas import AnalysisResponse, AnalysisResult, ResumeSummary
 from app.errors import AppError
+
+MAX_KEY_SKILLS = 8
 
 
 def _map_openai_error(exc: Exception, *, model: str) -> AppError:
@@ -40,19 +48,29 @@ async def test_api_key(api_key: str, model: str) -> None:
         raise _map_openai_error(exc, model=model) from exc
 
 
-def reconcile_with_stack(result: AnalysisResult, profiles: list[dict]) -> AnalysisResult:
-    """Enforces what the prompt asks for, in case the model doesn't follow it:
-    - a non-backend role (e.g. mobile) never matches a stack, even on a shared word like Java;
-    - no matching stack ("Dismatched JD") means no recommended profile;
-    - otherwise the recommended profile must contain main_tech_stack."""
-    if result.role_type is not None and result.role_type not in MATCHABLE_ROLE_TYPES:
-        result = result.model_copy(update={"main_tech_stack": None})
-    if result.main_tech_stack is None:
-        return result.model_copy(update={"recommended_profile_id": None})
-    candidates = [p["id"] for p in profiles if result.main_tech_stack in p["tech_stacks"]]
-    if result.recommended_profile_id in candidates or not candidates:
-        return result
-    return result.model_copy(update={"recommended_profile_id": candidates[0]})
+async def summarize_resume(*, api_key: str, model: str, resume_text: str) -> ResumeSummary:
+    """One small call per uploaded resume; the result is all that's stored."""
+    client = AsyncOpenAI(api_key=api_key)
+    messages = [
+        {"role": "system", "content": RESUME_SYSTEM_PROMPT},
+        {"role": "user", "content": build_resume_prompt(resume_text)},
+    ]
+    for _ in range(2):
+        try:
+            completion = await client.chat.completions.parse(
+                model=model, messages=messages, response_format=ResumeSummary
+            )
+        except OpenAIError as exc:
+            raise _map_openai_error(exc, model=model) from exc
+        parsed = completion.choices[0].message.parsed
+        if parsed is not None and parsed.summary.strip():
+            skills = [s.strip() for s in parsed.key_skills if s.strip()][:MAX_KEY_SKILLS]
+            return ResumeSummary(summary=parsed.summary.strip(), key_skills=skills)
+    raise AppError(
+        "invalid_ai_response",
+        "The AI couldn't summarize this resume. Please try again.",
+        502,
+    )
 
 
 class AnalysisOutcome:
@@ -67,13 +85,13 @@ class AnalysisOutcome:
 async def analyze_job_description(
     *, api_key: str, model: str, job_description: str, profiles: list[dict]
 ) -> AnalysisOutcome:
-    """profiles: [{"id": str, "name": str, "tech_stacks": list[str]}, ...] — the client's
-    active profiles, given as compact context so the model can recommend one by id.
+    """profiles: [{"id", "name", "summary", "skills"}, ...] — the client's active resumes that
+    have an uploaded summary. The model summarizes the JD and picks the best-fitting resume
+    (or none) in a single call.
 
     Retries once on invalid JSON or an unknown recommended_profile_id (see docs/SPEC.md).
     """
     valid_ids = {p["id"] for p in profiles}
-    response_model = response_model_for(allowed_stacks_from(profiles))
     client = AsyncOpenAI(api_key=api_key)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -86,7 +104,7 @@ async def analyze_job_description(
         started = time.monotonic()
         try:
             completion = await client.chat.completions.parse(
-                model=model, messages=messages, response_format=response_model
+                model=model, messages=messages, response_format=AnalysisResponse
             )
         except OpenAIError as exc:
             raise _map_openai_error(exc, model=model) from exc
@@ -99,10 +117,9 @@ async def analyze_job_description(
         if is_valid:
             assert parsed is not None
             tokens = completion.usage.total_tokens if completion.usage else None
-            result = reconcile_with_stack(
-                AnalysisResult.model_validate(parsed.model_dump()), profiles
+            outcome = AnalysisOutcome(
+                AnalysisResult.model_validate(parsed.model_dump()), tokens, latency_ms
             )
-            outcome = AnalysisOutcome(result, tokens, latency_ms)
             outcome.model = model
             return outcome
 
