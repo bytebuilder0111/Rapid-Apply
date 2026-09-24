@@ -13,7 +13,7 @@ from openai import (
 )
 
 from app.ai.prompts import PROMPT_VERSION, SYSTEM_PROMPT, allowed_stacks_from, build_user_prompt
-from app.ai.schemas import AnalysisResult, response_model_for
+from app.ai.schemas import MATCHABLE_ROLE_TYPES, AnalysisResult, response_model_for
 from app.errors import AppError
 
 
@@ -41,10 +41,14 @@ async def test_api_key(api_key: str, model: str) -> None:
 
 
 def reconcile_with_stack(result: AnalysisResult, profiles: list[dict]) -> AnalysisResult:
-    """Guarantees the recommended profile contains main_tech_stack. The model is told to do
-    this, but if it doesn't, keep its stack choice and swap in a profile that has that stack."""
+    """Enforces what the prompt asks for, in case the model doesn't follow it:
+    - a non-backend role (e.g. mobile) never matches a stack, even on a shared word like Java;
+    - no matching stack ("Dismatched JD") means no recommended profile;
+    - otherwise the recommended profile must contain main_tech_stack."""
+    if result.role_type is not None and result.role_type not in MATCHABLE_ROLE_TYPES:
+        result = result.model_copy(update={"main_tech_stack": None})
     if result.main_tech_stack is None:
-        return result
+        return result.model_copy(update={"recommended_profile_id": None})
     candidates = [p["id"] for p in profiles if result.main_tech_stack in p["tech_stacks"]]
     if result.recommended_profile_id in candidates or not candidates:
         return result

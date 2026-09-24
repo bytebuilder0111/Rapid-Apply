@@ -35,7 +35,7 @@ def test_prompt_lists_allowed_stacks() -> None:
 
 def test_response_model_restricts_stack_to_profile_list() -> None:
     model = response_model_for(["Python/Django", "Go"])
-    base = _result().model_dump()
+    base = _result(role_type="backend").model_dump()
 
     assert model.model_validate(base | {"main_tech_stack": "Go"}).main_tech_stack == "Go"
     assert model.model_validate(base | {"main_tech_stack": None}).main_tech_stack is None
@@ -101,6 +101,24 @@ def test_reconcile_swaps_profile_that_lacks_the_stack() -> None:
     assert reconcile_with_stack(result, PROFILES).recommended_profile_id == "p2"
 
 
-def test_reconcile_leaves_null_stack_alone() -> None:
+def test_reconcile_dismatched_jd_has_no_recommendation() -> None:
     result = _result(main_tech_stack=None, recommended_profile_id="p1")
-    assert reconcile_with_stack(result, PROFILES).recommended_profile_id == "p1"
+    assert reconcile_with_stack(result, PROFILES).recommended_profile_id is None
+
+
+def test_reconcile_non_backend_role_never_matches() -> None:
+    # e.g. a mobile JD listing "Java" for Android must not match a backend "Java" stack.
+    result = _result(role_type="mobile", main_tech_stack="Go", recommended_profile_id="p1")
+    reconciled = reconcile_with_stack(result, PROFILES)
+    assert reconciled.main_tech_stack is None
+    assert reconciled.recommended_profile_id is None
+
+
+def test_reconcile_fullstack_role_can_match() -> None:
+    result = _result(role_type="fullstack")
+    assert reconcile_with_stack(result, PROFILES).main_tech_stack == "Node.js/NestJS"
+
+
+def test_role_type_is_generated_before_stack() -> None:
+    props = list(to_strict_json_schema(response_model_for(["Go"]))["properties"])
+    assert props.index("role_type") < props.index("main_tech_stack")

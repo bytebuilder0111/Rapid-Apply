@@ -2,7 +2,19 @@ import { TriangleAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AnalysisResult } from "@/lib/analysis-api";
+import type { AnalysisResult, RoleType } from "@/lib/analysis-api";
+
+const ROLE_LABEL: Record<RoleType, string> = {
+  backend: "Backend role",
+  fullstack: "Full-stack role",
+  mobile: "Mobile role",
+  frontend: "Frontend role",
+  data: "Data role",
+  devops: "DevOps role",
+  other: "Other role",
+};
+
+const NON_BACKEND_ROLES = new Set<RoleType>(["mobile", "frontend", "data", "devops"]);
 
 const SENIORITY_LABEL: Record<AnalysisResult["seniority"], string> = {
   junior: "Junior",
@@ -38,7 +50,9 @@ export function ResultCard({
                 Dismatched JD
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                This job&apos;s core tech stack isn&apos;t in any of your profiles.
+                {result.role_type && NON_BACKEND_ROLES.has(result.role_type)
+                  ? `This is a ${ROLE_LABEL[result.role_type].toLowerCase()}, not a backend role.`
+                  : "This job's core tech stack isn't in any of your profiles."}
               </p>
             </div>
           ))}
@@ -46,7 +60,10 @@ export function ResultCard({
         <div>
           <p className="text-sm font-medium text-muted-foreground">As written in the JD</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{result.main_backend_skill}</Badge>
+            {result.role_type && <Badge variant="outline">{ROLE_LABEL[result.role_type]}</Badge>}
+            {result.main_backend_skill && (
+              <Badge variant="secondary">{result.main_backend_skill}</Badge>
+            )}
             {result.backend_framework && (
               <Badge variant="secondary">{result.backend_framework}</Badge>
             )}

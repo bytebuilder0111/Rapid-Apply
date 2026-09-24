@@ -3,11 +3,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, create_model
 
 Seniority = Literal["junior", "mid", "senior", "lead", "unknown"]
+RoleType = Literal["backend", "fullstack", "mobile", "frontend", "data", "devops", "other"]
+# Profiles are backend resumes, so only these role types can match a profile stack.
+MATCHABLE_ROLE_TYPES = {"backend", "fullstack"}
 
 
 class AnalysisResult(BaseModel):
+    # role_type comes first on purpose: structured output is generated in field order, so
+    # the model commits to what kind of role this is before it picks a stack.
+    role_type: RoleType | None = None
     # One of the client's profile tech stacks (exact string), or None if none fit the JD.
-    # Defaults to None so analyses saved before this field existed still validate.
+    # Both default to None so analyses saved before these fields existed still validate.
     main_tech_stack: str | None = None
     main_backend_skill: str
     backend_framework: str | None = None
@@ -26,5 +32,6 @@ def response_model_for(allowed_stacks: list[str]) -> type[AnalysisResult]:
     return create_model(
         "AnalysisResponse",
         __base__=AnalysisResult,
+        role_type=(RoleType, ...),
         main_tech_stack=(stack_type, ...),
     )

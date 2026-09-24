@@ -2,7 +2,10 @@ import { api } from "@/lib/api";
 
 export type Seniority = "junior" | "mid" | "senior" | "lead" | "unknown";
 
+export type RoleType = "backend" | "fullstack" | "mobile" | "frontend" | "data" | "devops" | "other";
+
 export type AnalysisResult = {
+  role_type?: RoleType | null;
   /** Always one of the client's profile tech stacks, or null when none fit the JD. */
   main_tech_stack?: string | null;
   main_backend_skill: string;
