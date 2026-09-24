@@ -146,6 +146,9 @@ export function ResumeSelector() {
       });
       setAnalyzeOutput(output);
       setSelectedProfileId(output.result.recommended_profile_id ?? "");
+      if (output.result.main_tech_stack === null) {
+        toast.warning("Dismatched JD: no matching tech stack in your profiles.");
+      }
       if (output.duplicate_warning) {
         toast.warning(output.duplicate_reason ?? "This job was already analyzed.");
       }

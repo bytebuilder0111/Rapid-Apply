@@ -1,3 +1,5 @@
+import { TriangleAlert } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { AnalysisResult } from "@/lib/analysis-api";
@@ -23,18 +25,23 @@ export function ResultCard({
         <CardTitle>Analysis result</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {result.main_tech_stack !== undefined && (
-          <div className="rounded-md border bg-muted/40 p-3">
-            <p className="text-sm font-medium text-muted-foreground">Main tech stack</p>
-            {result.main_tech_stack ? (
+        {result.main_tech_stack !== undefined &&
+          (result.main_tech_stack ? (
+            <div className="rounded-md border bg-muted/40 p-3">
+              <p className="text-sm font-medium text-muted-foreground">Main tech stack</p>
               <p className="mt-1 text-lg font-semibold">{result.main_tech_stack}</p>
-            ) : (
-              <p className="mt-1 text-sm text-muted-foreground">
-                None of your profiles&apos; tech stacks match this job
+            </div>
+          ) : (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3">
+              <p className="flex items-center gap-2 text-lg font-semibold text-destructive">
+                <TriangleAlert className="size-5" />
+                Dismatched JD
               </p>
-            )}
-          </div>
-        )}
+              <p className="mt-1 text-sm text-muted-foreground">
+                This job&apos;s core tech stack isn&apos;t in any of your profiles.
+              </p>
+            </div>
+          ))}
 
         <div>
           <p className="text-sm font-medium text-muted-foreground">As written in the JD</p>

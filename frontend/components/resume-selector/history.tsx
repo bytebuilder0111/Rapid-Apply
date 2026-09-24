@@ -150,6 +150,7 @@ export function AnalysisHistory() {
                 <TableHead>Date</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Position</TableHead>
+                <TableHead>Main stack</TableHead>
                 <TableHead>Profile</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -158,7 +159,7 @@ export function AnalysisHistory() {
             <TableBody>
               {data.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     No analyses yet.
                   </TableCell>
                 </TableRow>
@@ -168,6 +169,15 @@ export function AnalysisHistory() {
                   <TableCell>{new Date(a.created_at).toLocaleDateString()}</TableCell>
                   <TableCell className="font-medium">{a.company_name}</TableCell>
                   <TableCell>{a.position_name}</TableCell>
+                  <TableCell>
+                    {a.result.main_tech_stack === undefined ? (
+                      "—"
+                    ) : a.result.main_tech_stack ? (
+                      a.result.main_tech_stack
+                    ) : (
+                      <Badge variant="destructive">Dismatched JD</Badge>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {a.selected_profile_id
                       ? (profileNameById.get(a.selected_profile_id) ?? "—")
