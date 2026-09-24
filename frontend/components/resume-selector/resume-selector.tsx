@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, Circle, Loader2, TriangleAlert } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -37,11 +38,79 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+const ANALYZE_STEPS = [
+  { label: "Sending job description", untilSec: 1 },
+  { label: "AI is reading the job description", untilSec: 6 },
+  { label: "Identifying the core tech stack", untilSec: 12 },
+  { label: "Matching against your profiles", untilSec: Infinity },
+];
+const EXPECTED_SECONDS = 15;
+
+function AnalyzingPanel() {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const started = Date.now();
+    const id = setInterval(() => setElapsed((Date.now() - started) / 1000), 200);
+    return () => clearInterval(id);
+  }, []);
+
+  const activeIndex = ANALYZE_STEPS.findIndex((step) => elapsed < step.untilSec);
+  // Real progress isn't observable from one OpenAI call; ease toward 95% so it never looks stuck or done early.
+  const percent = Math.min(95, Math.round((1 - Math.exp(-elapsed / (EXPECTED_SECONDS / 2))) * 100));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Loader2 className="size-4 animate-spin" />
+          Analyzing...
+        </CardTitle>
+        <CardDescription>
+          {Math.floor(elapsed)}s elapsed · usually takes 5–20 seconds
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-200"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <ul className="flex flex-col gap-2 text-sm">
+          {ANALYZE_STEPS.map((step, i) => (
+            <li
+              key={step.label}
+              className={i > activeIndex ? "flex items-center gap-2 text-muted-foreground" : "flex items-center gap-2"}
+            >
+              {i < activeIndex ? (
+                <CheckCircle2 className="size-4 text-primary" />
+              ) : i === activeIndex ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Circle className="size-4" />
+              )}
+              {step.label}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ResumeSelector() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [analyzeOutput, setAnalyzeOutput] = useState<AnalyzeOutput | null>(null);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  const scrollToResult = () =>
+    requestAnimationFrame(() =>
+      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
 
   const { data: allProfiles } = useQuery({
     queryKey: ["profiles"],
@@ -65,6 +134,9 @@ export function ResumeSelector() {
   } = useForm<FormValues>({ resolver: zodResolver(formSchema) });
 
   const onAnalyze = async (values: FormValues) => {
+    setAnalyzeOutput(null);
+    setAnalyzeError(null);
+    scrollToResult();
     try {
       const output = await analysisApi.analyze({
         company_name: values.company_name,
@@ -77,8 +149,12 @@ export function ResumeSelector() {
       if (output.duplicate_warning) {
         toast.warning(output.duplicate_reason ?? "This job was already analyzed.");
       }
+      scrollToResult();
     } catch (error) {
-      toast.error(errorMessage(error, "Analysis failed"));
+      const message = errorMessage(error, "Analysis failed. Please try again.");
+      setAnalyzeError(message);
+      toast.error(message);
+      scrollToResult();
     }
   };
 
@@ -123,19 +199,21 @@ export function ResumeSelector() {
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit(onAnalyze)}>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="company_name">Company name</Label>
-              <Input id="company_name" {...register("company_name")} />
-              {errors.company_name && (
-                <p className="text-sm text-destructive">{errors.company_name.message}</p>
-              )}
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="position_name">Position name</Label>
-              <Input id="position_name" {...register("position_name")} />
-              {errors.position_name && (
-                <p className="text-sm text-destructive">{errors.position_name.message}</p>
-              )}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="company_name">Company name</Label>
+                <Input id="company_name" {...register("company_name")} />
+                {errors.company_name && (
+                  <p className="text-sm text-destructive">{errors.company_name.message}</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="position_name">Position name</Label>
+                <Input id="position_name" {...register("position_name")} />
+                {errors.position_name && (
+                  <p className="text-sm text-destructive">{errors.position_name.message}</p>
+                )}
+              </div>
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="job_link">Job link (optional)</Label>
@@ -146,7 +224,12 @@ export function ResumeSelector() {
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="job_description">Job description</Label>
-              <Textarea id="job_description" rows={10} {...register("job_description")} />
+              <Textarea
+                id="job_description"
+                className="h-72 resize-none overflow-y-auto field-sizing-fixed"
+                placeholder="Paste the full job description here..."
+                {...register("job_description")}
+              />
               {errors.job_description && (
                 <p className="text-sm text-destructive">{errors.job_description.message}</p>
               )}
@@ -170,6 +253,7 @@ export function ResumeSelector() {
 
             <div className="flex gap-2">
               <Button type="submit" disabled={isAnalyzing}>
+                {isAnalyzing && <Loader2 className="size-4 animate-spin" />}
                 {isAnalyzing ? "Analyzing..." : "Analyze"}
               </Button>
               {analyzeOutput && (
@@ -187,13 +271,34 @@ export function ResumeSelector() {
         </CardContent>
       </Card>
 
-      <div>
-        {analyzeOutput ? (
-          <ResultCard result={analyzeOutput.result} recommendedProfileName={recommendedProfileName} />
+      <div ref={resultRef} className="scroll-mt-6 lg:sticky lg:top-6 lg:self-start">
+        {isAnalyzing ? (
+          <AnalyzingPanel />
+        ) : analyzeOutput ? (
+          <div className="flex flex-col gap-2">
+            <ResultCard
+              result={analyzeOutput.result}
+              recommendedProfileName={recommendedProfileName}
+            />
+            <p className="text-xs text-muted-foreground">
+              Not saved yet: click <span className="font-medium">Save</span> to add it to History
+              below.
+            </p>
+          </div>
+        ) : analyzeError ? (
+          <Card className="border-destructive/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <TriangleAlert className="size-4" />
+                Analysis failed
+              </CardTitle>
+              <CardDescription>{analyzeError}</CardDescription>
+            </CardHeader>
+          </Card>
         ) : (
-          <Card className="flex h-full min-h-64 items-center justify-center">
-            <p className="text-sm text-muted-foreground">
-              Results appear here after you analyze a job description.
+          <Card className="flex min-h-64 items-center justify-center p-6">
+            <p className="text-center text-sm text-muted-foreground">
+              Results appear here after you click <span className="font-medium">Analyze</span>.
             </p>
           </Card>
         )}
