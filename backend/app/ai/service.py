@@ -12,6 +12,7 @@ from openai import (
     RateLimitError,
 )
 
+from app.ai.evidence import decide_match
 from app.ai.prompts import (
     PROMPT_VERSION,
     RESUME_SYSTEM_PROMPT,
@@ -86,12 +87,12 @@ async def analyze_job_description(
     *, api_key: str, model: str, job_description: str, profiles: list[dict]
 ) -> AnalysisOutcome:
     """profiles: [{"id", "name", "summary", "skills"}, ...] — the client's active resumes that
-    have an uploaded summary. The model summarizes the JD and picks the best-fitting resume
-    (or none) in a single call.
+    have an uploaded summary. One call summarizes the JD and assesses every resume;
+    app/ai/evidence.py then picks the best-fitting resume, or none.
 
-    Retries once on invalid JSON or an unknown recommended_profile_id (see docs/SPEC.md).
+    Retries once on invalid JSON or when the model skipped a resume (see docs/SPEC.md).
     """
-    valid_ids = {p["id"] for p in profiles}
+    all_ids = {p["id"] for p in profiles}
     client = AsyncOpenAI(api_key=api_key)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -111,14 +112,13 @@ async def analyze_job_description(
         latency_ms = int((time.monotonic() - started) * 1000)
 
         parsed = completion.choices[0].message.parsed
-        is_valid = parsed is not None and (
-            parsed.recommended_profile_id is None or parsed.recommended_profile_id in valid_ids
-        )
-        if is_valid:
+        complete = parsed is not None and all_ids <= {c.profile_id for c in parsed.resume_checks}
+        # A skipped resume is only worth one retry; after that, decide on the checks we have.
+        if complete or (parsed is not None and attempts >= 2):
             assert parsed is not None
             tokens = completion.usage.total_tokens if completion.usage else None
             outcome = AnalysisOutcome(
-                AnalysisResult.model_validate(parsed.model_dump()), tokens, latency_ms
+                decide_match(parsed, job_description, profiles), tokens, latency_ms
             )
             outcome.model = model
             return outcome

@@ -81,13 +81,31 @@ export function ResultCard({
         )}
 
         <div>
+          <p className="text-sm font-medium text-muted-foreground">Stack named in the JD</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {Array.isArray(result.jd_core_stack) ? (
+              result.jd_core_stack.length > 0 ? (
+                result.jd_core_stack.map((t) => <Badge key={t}>{t}</Badge>)
+              ) : (
+                <span className="text-sm text-muted-foreground">
+                  No specific language or framework named
+                </span>
+              )
+            ) : (
+              <>
+                <Badge>{result.main_backend_skill}</Badge>
+                {result.backend_framework && <Badge>{result.backend_framework}</Badge>}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div>
           <p className="text-sm font-medium text-muted-foreground">Job details</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             {result.role_type && (
               <Badge variant="outline">{ROLE_LABEL[result.role_type]} role</Badge>
             )}
-            {result.main_backend_skill && <Badge>{result.main_backend_skill}</Badge>}
-            {result.backend_framework && <Badge>{result.backend_framework}</Badge>}
             <Badge variant="outline">{SENIORITY_LABEL[result.seniority]}</Badge>
           </div>
         </div>

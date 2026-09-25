@@ -17,6 +17,9 @@ class AnalysisResult(BaseModel):
 
     jd_summary: str | None = None
     role_type: RoleType | None = None
+    # Languages/frameworks the JD explicitly names, verified against the JD text in
+    # app/ai/service.py. None on analyses saved before this field existed.
+    jd_core_stack: list[str] | None = None
     main_backend_skill: str
     backend_framework: str | None = None
     secondary_skills: list[str] = Field(default_factory=list)
@@ -28,9 +31,25 @@ class AnalysisResult(BaseModel):
     reasoning: str
 
 
-class AnalysisResponse(AnalysisResult):
+class ResumeCheck(BaseModel):
+    profile_id: str
+    matching_technologies: list[str]
+    same_role: bool
+    fit: float = Field(ge=0, le=1)
+    note: str
+
+
+class AnalysisResponse(BaseModel):
     """What OpenAI must return. Structured output is generated in field order, so the model
-    writes the JD summary and decides the role type before it picks a resume."""
+    reads the JD first, then writes a check for every resume. It doesn't pick the winner:
+    app/ai/evidence.py does, from these checks plus text evidence."""
 
     jd_summary: str
     role_type: RoleType
+    jd_core_stack: list[str]
+    main_backend_skill: str
+    backend_framework: str | None
+    secondary_skills: list[str]
+    seniority: Seniority
+    key_requirements: list[str]
+    resume_checks: list[ResumeCheck]

@@ -8,6 +8,8 @@ export type AnalysisResult = {
   /** Absent on analyses saved before resume-based matching. */
   jd_summary?: string | null;
   role_type?: RoleType | null;
+  /** Languages/frameworks the JD explicitly names (verified against the JD text). */
+  jd_core_stack?: string[] | null;
   /** The job's core language/tech as the JD names it. */
   main_backend_skill: string;
   backend_framework: string | null;
