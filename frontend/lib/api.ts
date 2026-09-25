@@ -22,13 +22,24 @@ type RequestOptions = {
 
 async function parseError(response: Response): Promise<never> {
   let code = "unknown_error";
-  let message = "Something went wrong. Please try again.";
+  let message = `Something went wrong (HTTP ${response.status}). Please try again.`;
   try {
     const data = await response.json();
-    code = data?.error?.code ?? code;
-    message = data?.error?.message ?? message;
+    if (data?.error) {
+      code = data.error.code ?? code;
+      message = data.error.message ?? message;
+    } else if (data?.detail) {
+      // FastAPI's own request-validation (422) and routing errors use `detail`.
+      code = "request_error";
+      message = Array.isArray(data.detail)
+        ? `Invalid request: ${data.detail.map((d: { msg?: string }) => d.msg).join("; ")}`
+        : String(data.detail);
+    }
   } catch {
-    // Response had no JSON body; fall back to the defaults above.
+    // No JSON body: usually the API server is down or unreachable through the proxy.
+    if (response.status >= 500) {
+      message = `The API server didn't respond properly (HTTP ${response.status}). Is the backend running?`;
+    }
   }
   throw new ApiError(code, message, response.status);
 }
