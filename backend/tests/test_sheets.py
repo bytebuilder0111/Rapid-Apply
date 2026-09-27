@@ -1,21 +1,31 @@
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Role
-from app.sheets.service import extract_spreadsheet_id
 
 from .conftest import create_user, login_headers
 
 
-def test_extract_spreadsheet_id_from_url() -> None:
-    url = "https://docs.google.com/spreadsheets/d/1AbC-XyZ_123/edit#gid=0"
-    assert extract_spreadsheet_id(url) == "1AbC-XyZ_123"
-
-
-def test_extract_spreadsheet_id_passthrough() -> None:
-    assert extract_spreadsheet_id("1AbC-XyZ_123") == "1AbC-XyZ_123"
+@contextmanager
+def fake_google(*, title: str = "Job Tracker", tabs: list[str] | None = None):
+    """Stands in for a connected Google account; yields the SheetsWriter instance mock."""
+    with (
+        patch(
+            "app.sheets.service.google_service.get_decrypted_refresh_token",
+            new=AsyncMock(return_value="fake-refresh-token"),
+        ),
+        patch("app.sheets.service.SheetsWriter") as writer_cls,
+    ):
+        writer: MagicMock = writer_cls.return_value
+        writer.get_spreadsheet.return_value = (title, tabs or ["Sheet1", "Job Log"])
+        writer.list_spreadsheets.return_value = [
+            {"id": "sheet123", "name": "Job Tracker"},
+            {"id": "sheet456", "name": "Budget"},
+        ]
+        yield writer
 
 
 async def _client_with_profile(
@@ -27,40 +37,101 @@ async def _client_with_profile(
     return headers, profile_resp.json()["id"]
 
 
-async def test_client_sheet_config_crud(client: AsyncClient, db_session: AsyncSession) -> None:
+def _config(profile_id: str, **overrides) -> dict:
+    base = {
+        "profile_id": profile_id,
+        "profile_name": "P1",
+        "enabled": False,
+        "spreadsheet_id": None,
+        "spreadsheet_name": None,
+        "sheet_name": None,
+    }
+    return base | overrides
+
+
+async def test_save_and_clear_client_sheet_config(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
     headers, profile_id = await _client_with_profile(
         client, db_session, email="sheetconfig@example.com"
     )
-
-    list_resp = await client.get("/api/v1/sheet-configs", headers=headers)
-    assert list_resp.status_code == 200
-    assert list_resp.json() == [
-        {
-            "profile_id": profile_id,
-            "profile_name": "P1",
-            "enabled": False,
-            "spreadsheet_id": None,
-            "sheet_name": None,
-        }
+    assert (await client.get("/api/v1/sheet-configs", headers=headers)).json() == [
+        _config(profile_id)
     ]
 
-    save_resp = await client.put(
+    with fake_google() as writer:
+        save_resp = await client.put(
+            f"/api/v1/sheet-configs/{profile_id}",
+            headers=headers,
+            json={"spreadsheet_id": "sheet123", "sheet_name": "Job Log"},
+        )
+    assert save_resp.status_code == 200, save_resp.text
+    saved = _config(
+        profile_id,
+        enabled=True,
+        spreadsheet_id="sheet123",
+        spreadsheet_name="Job Tracker",
+        sheet_name="Job Log",
+    )
+    assert save_resp.json() == saved
+    # Saving verifies write access by writing the header row (only if the tab is empty).
+    writer.ensure_header.assert_called_once_with("sheet123", "Job Log")
+    assert (await client.get("/api/v1/sheet-configs", headers=headers)).json() == [saved]
+
+    clear_resp = await client.delete(f"/api/v1/sheet-configs/{profile_id}", headers=headers)
+    assert clear_resp.status_code == 200
+    assert clear_resp.json() == _config(profile_id)
+    assert (await client.get("/api/v1/sheet-configs", headers=headers)).json() == [
+        _config(profile_id)
+    ]
+
+
+async def test_save_rejects_a_tab_that_does_not_exist(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    headers, profile_id = await _client_with_profile(client, db_session, email="badtab@example.com")
+    with fake_google(tabs=["Sheet1"]) as writer:
+        resp = await client.put(
+            f"/api/v1/sheet-configs/{profile_id}",
+            headers=headers,
+            json={"spreadsheet_id": "sheet123", "sheet_name": "Missing"},
+        )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "tab_not_found"
+    writer.ensure_header.assert_not_called()
+
+
+async def test_save_requires_google_connection(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    headers, profile_id = await _client_with_profile(
+        client, db_session, email="nogoogle@example.com"
+    )
+    resp = await client.put(
         f"/api/v1/sheet-configs/{profile_id}",
         headers=headers,
-        json={
-            "enabled": True,
-            "spreadsheet": "https://docs.google.com/spreadsheets/d/sheet123/edit",
-            "sheet_name": "Sheet1",
-        },
+        json={"spreadsheet_id": "sheet123", "sheet_name": "Sheet1"},
     )
-    assert save_resp.status_code == 200, save_resp.text
-    body = save_resp.json()
-    assert body["enabled"] is True
-    assert body["spreadsheet_id"] == "sheet123"
-    assert body["sheet_name"] == "Sheet1"
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "google_not_connected"
 
 
-async def test_bidder_cannot_configure_other_profile(
+async def test_list_spreadsheets_and_tabs(client: AsyncClient, db_session: AsyncSession) -> None:
+    headers, _ = await _client_with_profile(client, db_session, email="listsheets@example.com")
+    with fake_google() as writer:
+        sheets = await client.get("/api/v1/sheet-configs/spreadsheets", headers=headers)
+        tabs = await client.get(
+            "/api/v1/sheet-configs/tabs", headers=headers, params={"spreadsheet_id": "sheet123"}
+        )
+    assert sheets.json() == [
+        {"id": "sheet123", "name": "Job Tracker"},
+        {"id": "sheet456", "name": "Budget"},
+    ]
+    assert tabs.json() == {"tabs": ["Sheet1", "Job Log"]}
+    writer.get_spreadsheet.assert_called_once_with("sheet123")
+
+
+async def test_bidder_can_only_configure_assigned_profile(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     headers, profile_id = await _client_with_profile(
@@ -75,63 +146,38 @@ async def test_bidder_cannot_configure_other_profile(
         assigned_profile_id=profile_id,
     )
     bidder_headers = await login_headers(client, email="bidderconfiguser@example.com")
+    other_profile_id = (
+        await client.post("/api/v1/profiles", headers=headers, json={"name": "P2"})
+    ).json()["id"]
+    body = {"spreadsheet_id": "sheet123", "sheet_name": "Sheet1"}
 
-    other_resp = await client.post("/api/v1/profiles", headers=headers, json={"name": "P2"})
-    other_profile_id = other_resp.json()["id"]
+    with fake_google():
+        forbidden = await client.put(
+            f"/api/v1/sheet-configs/{other_profile_id}", headers=bidder_headers, json=body
+        )
+        forbidden_clear = await client.delete(
+            f"/api/v1/sheet-configs/{other_profile_id}", headers=bidder_headers
+        )
+        allowed = await client.put(
+            f"/api/v1/sheet-configs/{profile_id}", headers=bidder_headers, json=body
+        )
 
-    forbidden = await client.put(
-        f"/api/v1/sheet-configs/{other_profile_id}",
-        headers=bidder_headers,
-        json={"enabled": True, "spreadsheet": "abc", "sheet_name": "Sheet1"},
-    )
     assert forbidden.status_code == 403
-
-    allowed = await client.put(
-        f"/api/v1/sheet-configs/{profile_id}",
-        headers=bidder_headers,
-        json={"enabled": True, "spreadsheet": "abc", "sheet_name": "Sheet1"},
-    )
+    assert forbidden_clear.status_code == 403
     assert allowed.status_code == 200, allowed.text
-
     mine = await client.get("/api/v1/sheet-configs", headers=bidder_headers)
     assert mine.json() == [
-        {
-            "profile_id": profile_id,
-            "profile_name": "P1",
-            "enabled": True,
-            "spreadsheet_id": "abc",
-            "sheet_name": "Sheet1",
-        }
+        _config(
+            profile_id,
+            enabled=True,
+            spreadsheet_id="sheet123",
+            spreadsheet_name="Job Tracker",
+            sheet_name="Sheet1",
+        )
     ]
-
-
-async def test_list_tabs_and_test_write_use_writer(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
-    headers, _ = await _client_with_profile(client, db_session, email="tabsclient@example.com")
-
-    fake_row = MagicMock()
-    fake_row.status = None
-    with patch(
-        "app.sheets.service.google_service.get_decrypted_refresh_token",
-        new=AsyncMock(return_value="fake-refresh-token"),
-    ):
-        with patch("app.sheets.service.SheetsWriter") as writer_cls:
-            writer_cls.return_value.list_tabs.return_value = ["Sheet1", "Sheet2"]
-            tabs_resp = await client.get(
-                "/api/v1/sheet-configs/tabs", headers=headers, params={"spreadsheet": "sheet123"}
-            )
-        assert tabs_resp.status_code == 200
-        assert tabs_resp.json() == {"tabs": ["Sheet1", "Sheet2"]}
-
-        with patch("app.sheets.service.SheetsWriter") as writer_cls:
-            test_resp = await client.post(
-                "/api/v1/sheet-configs/test",
-                headers=headers,
-                json={"spreadsheet": "sheet123", "sheet_name": "Sheet1"},
-            )
-        assert test_resp.status_code == 204
-        writer_cls.return_value.ensure_header.assert_called_once_with("sheet123", "Sheet1")
+    # The bidder's personal config doesn't change the client's profile-level one.
+    client_view = await client.get("/api/v1/sheet-configs", headers=headers)
+    assert _config(profile_id) in client_view.json()
 
 
 async def test_analysis_save_records_to_sheet_in_background(
@@ -145,11 +191,13 @@ async def test_analysis_save_records_to_sheet_in_background(
         headers=headers,
         json={"api_key": "sk-testkey1234", "model": "gpt-4o-mini"},
     )
-    await client.put(
-        f"/api/v1/sheet-configs/{profile_id}",
-        headers=headers,
-        json={"enabled": True, "spreadsheet": "sheet123", "sheet_name": "Sheet1"},
-    )
+    with fake_google():
+        saved = await client.put(
+            f"/api/v1/sheet-configs/{profile_id}",
+            headers=headers,
+            json={"spreadsheet_id": "sheet123", "sheet_name": "Sheet1"},
+        )
+    assert saved.status_code == 200, saved.text
 
     payload = {
         "company_name": "Acme",

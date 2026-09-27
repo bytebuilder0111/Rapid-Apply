@@ -28,6 +28,8 @@ class SheetConfig(Base):
     )
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     spreadsheet_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Display name captured from Google when the config is saved.
+    spreadsheet_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sheet_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

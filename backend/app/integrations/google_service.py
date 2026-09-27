@@ -26,6 +26,8 @@ SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/spreadsheets",
+    # Names/ids only, so Config can list the account's spreadsheets in a dropdown.
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
 _STATE_TTL = timedelta(minutes=10)

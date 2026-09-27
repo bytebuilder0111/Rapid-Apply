@@ -3,23 +3,23 @@ import { api } from "@/lib/api";
 export type SheetConfig = {
   profile_id: string;
   profile_name: string;
+  /** True once a spreadsheet + tab is saved; analyses for this resume type then auto-record. */
   enabled: boolean;
   spreadsheet_id: string | null;
+  spreadsheet_name: string | null;
   sheet_name: string | null;
 };
 
-export type SaveSheetConfigInput = {
-  enabled: boolean;
-  spreadsheet?: string | null;
-  sheet_name?: string | null;
-};
+export type Spreadsheet = { id: string; name: string };
 
 export const sheetConfigsApi = {
   list: () => api.get<SheetConfig[]>("/sheet-configs"),
-  save: (profileId: string, input: SaveSheetConfigInput) =>
+  spreadsheets: () => api.get<Spreadsheet[]>("/sheet-configs/spreadsheets"),
+  tabs: (spreadsheetId: string) =>
+    api.get<{ tabs: string[] }>(
+      `/sheet-configs/tabs?spreadsheet_id=${encodeURIComponent(spreadsheetId)}`,
+    ),
+  save: (profileId: string, input: { spreadsheet_id: string; sheet_name: string }) =>
     api.put<SheetConfig>(`/sheet-configs/${profileId}`, input),
-  tabs: (spreadsheet: string) =>
-    api.get<{ tabs: string[] }>(`/sheet-configs/tabs?spreadsheet=${encodeURIComponent(spreadsheet)}`),
-  test: (input: { spreadsheet: string; sheet_name: string }) =>
-    api.post<void>("/sheet-configs/test", input),
+  clear: (profileId: string) => api.delete<SheetConfig>(`/sheet-configs/${profileId}`),
 };

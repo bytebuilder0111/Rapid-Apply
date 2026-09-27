@@ -1,5 +1,5 @@
 import asyncio
-import re
+from collections.abc import Callable
 from uuid import UUID
 
 from google.auth.exceptions import RefreshError
@@ -14,15 +14,8 @@ from app.integrations import google_service
 from app.models import Role, User
 from app.profiles.models import Profile
 from app.sheets.models import SheetConfig
-from app.sheets.schemas import SaveSheetConfigRequest, SheetConfigOut
+from app.sheets.schemas import SaveSheetConfigRequest, SheetConfigOut, SpreadsheetOut
 from app.sheets.writer import SheetsWriter
-
-_URL_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9-_]+)")
-
-
-def extract_spreadsheet_id(value: str) -> str:
-    match = _URL_ID_RE.search(value)
-    return match.group(1) if match else value.strip()
 
 
 def _http_error_message(exc: HttpError) -> str:
@@ -32,6 +25,56 @@ def _http_error_message(exc: HttpError) -> str:
     if status == 404:
         return "Spreadsheet or tab not found."
     return f"Google Sheets error (status {status})."
+
+
+def _scope_missing(exc: HttpError) -> bool:
+    body = exc.content.decode(errors="ignore") if isinstance(exc.content, bytes) else ""
+    return "insufficient" in body.lower() and "scope" in body.lower()
+
+
+async def _call_google[T](db: AsyncSession, client_id: UUID, fn: Callable[[SheetsWriter], T]) -> T:
+    """Runs a (blocking) SheetsWriter method with the client's Google connection, turning
+    Google failures into readable errors. Expired/revoked grants and connections made before
+    the Drive permission existed mark the connection NEEDS_RECONNECT, which shows the banner."""
+    refresh_token = await google_service.get_decrypted_refresh_token(db, client_id)
+    writer = SheetsWriter(refresh_token)
+    try:
+        return await asyncio.to_thread(fn, writer)
+    except RefreshError as exc:
+        await google_service.mark_needs_reconnect(db, client_id)
+        raise AppError(
+            "google_needs_reconnect", "Google connection needs to be reconnected", 400
+        ) from exc
+    except HttpError as exc:
+        if _scope_missing(exc):
+            await google_service.mark_needs_reconnect(db, client_id)
+            raise AppError(
+                "google_needs_reconnect",
+                "Reconnect Google under Integrations to allow listing your spreadsheets.",
+                400,
+            ) from exc
+        raise AppError("sheet_access_failed", _http_error_message(exc), 400) from exc
+
+
+def _out(profile: Profile | None, profile_id: UUID, row: SheetConfig | None) -> SheetConfigOut:
+    active = row is not None and row.enabled
+    return SheetConfigOut(
+        profile_id=profile_id,
+        profile_name=profile.name if profile else "",
+        enabled=active,
+        spreadsheet_id=row.spreadsheet_id if active else None,
+        spreadsheet_name=row.spreadsheet_name if active else None,
+        sheet_name=row.sheet_name if active else None,
+    )
+
+
+def _config_query(client_id: UUID, profile_id: UUID, user_id: UUID | None):
+    stmt = select(SheetConfig).where(
+        SheetConfig.client_id == client_id, SheetConfig.profile_id == profile_id
+    )
+    return stmt.where(
+        SheetConfig.user_id.is_(None) if user_id is None else SheetConfig.user_id == user_id
+    )
 
 
 async def list_configs_for_client(db: AsyncSession, client_id: UUID) -> list[SheetConfigOut]:
@@ -56,135 +99,131 @@ async def list_configs_for_client(db: AsyncSession, client_id: UUID) -> list[She
         .all()
     )
     by_profile = {c.profile_id: c for c in configs}
-    return [
-        SheetConfigOut(
-            profile_id=p.id,
-            profile_name=p.name,
-            enabled=by_profile[p.id].enabled if p.id in by_profile else False,
-            spreadsheet_id=by_profile[p.id].spreadsheet_id if p.id in by_profile else None,
-            sheet_name=by_profile[p.id].sheet_name if p.id in by_profile else None,
-        )
-        for p in profiles
-    ]
+    return [_out(p, p.id, by_profile.get(p.id)) for p in profiles]
+
+
+def _bidder_profile_id(user: User) -> UUID:
+    if user.assigned_profile_id is None:
+        raise AppError("no_assigned_profile", "You have no assigned resume type yet", 400)
+    return user.assigned_profile_id
 
 
 async def get_bidder_config(db: AsyncSession, *, client_id: UUID, user: User) -> SheetConfigOut:
-    if user.assigned_profile_id is None:
-        raise AppError("no_assigned_profile", "You have no assigned profile yet", 400)
-    profile = await db.get(Profile, user.assigned_profile_id)
-    row = (
-        await db.execute(
-            select(SheetConfig).where(
-                SheetConfig.client_id == client_id,
-                SheetConfig.profile_id == user.assigned_profile_id,
-                SheetConfig.user_id == user.id,
-            )
-        )
-    ).scalar_one_or_none()
-    return SheetConfigOut(
-        profile_id=user.assigned_profile_id,
-        profile_name=profile.name if profile else "",
-        enabled=row.enabled if row else False,
-        spreadsheet_id=row.spreadsheet_id if row else None,
-        sheet_name=row.sheet_name if row else None,
-    )
+    profile_id = _bidder_profile_id(user)
+    profile = await db.get(Profile, profile_id)
+    row = (await db.execute(_config_query(client_id, profile_id, user.id))).scalar_one_or_none()
+    return _out(profile, profile_id, row)
 
 
-async def _upsert(
+async def _save(
     db: AsyncSession,
     *,
     client_id: UUID,
+    profile: Profile | None,
     profile_id: UUID,
     user_id: UUID | None,
     payload: SaveSheetConfigRequest,
-    profile_name: str,
 ) -> SheetConfigOut:
-    spreadsheet_id = extract_spreadsheet_id(payload.spreadsheet) if payload.spreadsheet else None
-    stmt = select(SheetConfig).where(
-        SheetConfig.client_id == client_id, SheetConfig.profile_id == profile_id
+    title, tabs = await _call_google(
+        db, client_id, lambda w: w.get_spreadsheet(payload.spreadsheet_id)
     )
-    stmt = stmt.where(
-        SheetConfig.user_id.is_(None) if user_id is None else SheetConfig.user_id == user_id
+    if payload.sheet_name not in tabs:
+        raise AppError("tab_not_found", f"'{payload.sheet_name}' isn't a tab in {title}.", 400)
+    # Writing the header (only if the tab is empty) doubles as the write-access check.
+    await _call_google(
+        db, client_id, lambda w: w.ensure_header(payload.spreadsheet_id, payload.sheet_name)
     )
-    row = (await db.execute(stmt)).scalar_one_or_none()
+
+    row = (await db.execute(_config_query(client_id, profile_id, user_id))).scalar_one_or_none()
     if row is None:
         row = SheetConfig(client_id=client_id, profile_id=profile_id, user_id=user_id)
         db.add(row)
-    row.enabled = payload.enabled
-    row.spreadsheet_id = spreadsheet_id
+    row.enabled = True
+    row.spreadsheet_id = payload.spreadsheet_id
+    row.spreadsheet_name = title
     row.sheet_name = payload.sheet_name
     await db.commit()
-    return SheetConfigOut(
-        profile_id=profile_id,
-        profile_name=profile_name,
-        enabled=row.enabled,
-        spreadsheet_id=row.spreadsheet_id,
-        sheet_name=row.sheet_name,
-    )
+    return _out(profile, profile_id, row)
+
+
+async def _clear(
+    db: AsyncSession,
+    *,
+    client_id: UUID,
+    profile: Profile | None,
+    profile_id: UUID,
+    user_id: UUID | None,
+) -> SheetConfigOut:
+    row = (await db.execute(_config_query(client_id, profile_id, user_id))).scalar_one_or_none()
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
+    return _out(profile, profile_id, None)
+
+
+async def _client_profile(db: AsyncSession, client_id: UUID, profile_id: UUID) -> Profile:
+    profile = await db.get(Profile, profile_id)
+    if profile is None or profile.client_id != client_id:
+        raise AppError("not_found", "Resume type not found", 404)
+    return profile
 
 
 async def save_client_config(
     db: AsyncSession, *, client_id: UUID, profile_id: UUID, payload: SaveSheetConfigRequest
 ) -> SheetConfigOut:
-    profile = await db.get(Profile, profile_id)
-    if profile is None or profile.client_id != client_id:
-        raise AppError("not_found", "Profile not found", 404)
-    return await _upsert(
+    profile = await _client_profile(db, client_id, profile_id)
+    return await _save(
         db,
         client_id=client_id,
+        profile=profile,
         profile_id=profile_id,
         user_id=None,
         payload=payload,
-        profile_name=profile.name,
+    )
+
+
+async def clear_client_config(
+    db: AsyncSession, *, client_id: UUID, profile_id: UUID
+) -> SheetConfigOut:
+    profile = await _client_profile(db, client_id, profile_id)
+    return await _clear(
+        db, client_id=client_id, profile=profile, profile_id=profile_id, user_id=None
     )
 
 
 async def save_bidder_config(
     db: AsyncSession, *, client_id: UUID, user: User, payload: SaveSheetConfigRequest
 ) -> SheetConfigOut:
-    if user.assigned_profile_id is None:
-        raise AppError("no_assigned_profile", "You have no assigned profile yet", 400)
-    profile = await db.get(Profile, user.assigned_profile_id)
-    return await _upsert(
+    profile_id = _bidder_profile_id(user)
+    return await _save(
         db,
         client_id=client_id,
-        profile_id=user.assigned_profile_id,
+        profile=await db.get(Profile, profile_id),
+        profile_id=profile_id,
         user_id=user.id,
         payload=payload,
-        profile_name=profile.name if profile else "",
     )
 
 
-async def list_tabs(db: AsyncSession, *, client_id: UUID, spreadsheet: str) -> list[str]:
-    spreadsheet_id = extract_spreadsheet_id(spreadsheet)
-    refresh_token = await google_service.get_decrypted_refresh_token(db, client_id)
-    writer = SheetsWriter(refresh_token)
-    try:
-        return await asyncio.to_thread(writer.list_tabs, spreadsheet_id)
-    except RefreshError as exc:
-        await google_service.mark_needs_reconnect(db, client_id)
-        raise AppError(
-            "google_needs_reconnect", "Google connection needs to be reconnected", 400
-        ) from exc
-    except HttpError as exc:
-        raise AppError("sheet_access_failed", _http_error_message(exc), 400) from exc
+async def clear_bidder_config(db: AsyncSession, *, client_id: UUID, user: User) -> SheetConfigOut:
+    profile_id = _bidder_profile_id(user)
+    return await _clear(
+        db,
+        client_id=client_id,
+        profile=await db.get(Profile, profile_id),
+        profile_id=profile_id,
+        user_id=user.id,
+    )
 
 
-async def test_write(
-    db: AsyncSession, *, client_id: UUID, spreadsheet: str, sheet_name: str
-) -> None:
-    spreadsheet_id = extract_spreadsheet_id(spreadsheet)
-    refresh_token = await google_service.get_decrypted_refresh_token(db, client_id)
-    writer = SheetsWriter(refresh_token)
-    try:
-        await asyncio.to_thread(writer.ensure_header, spreadsheet_id, sheet_name)
-    except RefreshError as exc:
-        await google_service.mark_needs_reconnect(db, client_id)
-        raise AppError(
-            "google_needs_reconnect", "Google connection needs to be reconnected", 400
-        ) from exc
-    except HttpError as exc:
-        raise AppError("sheet_access_failed", _http_error_message(exc), 400) from exc
+async def list_spreadsheets(db: AsyncSession, *, client_id: UUID) -> list[SpreadsheetOut]:
+    files = await _call_google(db, client_id, lambda w: w.list_spreadsheets())
+    return [SpreadsheetOut(**f) for f in files]
+
+
+async def list_tabs(db: AsyncSession, *, client_id: UUID, spreadsheet_id: str) -> list[str]:
+    _, tabs = await _call_google(db, client_id, lambda w: w.get_spreadsheet(spreadsheet_id))
+    return tabs
 
 
 async def resolve_config(
