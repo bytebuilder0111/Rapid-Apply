@@ -84,19 +84,19 @@ class AnalysisOutcome:
 
 
 async def analyze_job_description(
-    *, api_key: str, model: str, job_description: str, profiles: list[dict]
+    *, api_key: str, model: str, job_description: str, resumes: list[dict]
 ) -> AnalysisOutcome:
-    """profiles: [{"id", "name", "summary", "skills"}, ...] — the client's active resumes that
-    have an uploaded summary. One call summarizes the JD and assesses every resume;
+    """resumes: [{"id", "name", "summary", "skills"}, ...] — the chosen profile's active resume
+    types that have an uploaded summary. One call summarizes the JD and assesses every resume;
     app/ai/evidence.py then picks the best-fitting resume, or none.
 
     Retries once on invalid JSON or when the model skipped a resume (see docs/SPEC.md).
     """
-    all_ids = {p["id"] for p in profiles}
+    all_ids = {r["id"] for r in resumes}
     client = AsyncOpenAI(api_key=api_key)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_user_prompt(job_description, profiles)},
+        {"role": "user", "content": build_user_prompt(job_description, resumes)},
     ]
 
     attempts = 0
@@ -112,13 +112,13 @@ async def analyze_job_description(
         latency_ms = int((time.monotonic() - started) * 1000)
 
         parsed = completion.choices[0].message.parsed
-        complete = parsed is not None and all_ids <= {c.profile_id for c in parsed.resume_checks}
+        complete = parsed is not None and all_ids <= {c.resume_id for c in parsed.resume_checks}
         # A skipped resume is only worth one retry; after that, decide on the checks we have.
         if complete or (parsed is not None and attempts >= 2):
             assert parsed is not None
             tokens = completion.usage.total_tokens if completion.usage else None
             outcome = AnalysisOutcome(
-                decide_match(parsed, job_description, profiles), tokens, latency_ms
+                decide_match(parsed, job_description, resumes), tokens, latency_ms
             )
             outcome.model = model
             return outcome

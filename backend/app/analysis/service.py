@@ -13,6 +13,7 @@ from app.errors import AppError
 from app.integrations.service import get_decrypted_key_for_client, get_settings_row
 from app.models import Role, User
 from app.profiles.models import Profile
+from app.resume_types.models import ResumeType
 from app.sheets.service import initial_record_status
 
 
@@ -21,18 +22,34 @@ def normalize_jd_hash(job_description: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
-async def _active_profiles_context(db: AsyncSession, client_id: UUID) -> list[dict]:
-    """The client's active resume types that have an uploaded resume summary to match on."""
+async def _resolve_profile(
+    db: AsyncSession, *, user: User, client_id: UUID, profile_id: UUID | None
+) -> Profile:
+    """The profile (person) to work with: a bidder's assigned one, or the client's choice."""
+    if user.role == Role.BIDDER:
+        profile_id = user.assigned_profile_id
+        if profile_id is None:
+            raise AppError("no_assigned_profile", "You have no assigned profile yet", 400)
+    elif profile_id is None:
+        raise AppError("profile_required", "Choose a profile first", 400)
+    profile = await db.get(Profile, profile_id)
+    if profile is None or profile.client_id != client_id:
+        raise AppError("invalid_profile", "Profile does not belong to this client", 400)
+    return profile
+
+
+async def _resumes_context(db: AsyncSession, profile_id: UUID) -> list[dict]:
+    """The profile's active resume types that have an uploaded resume summary to match on."""
     result = await db.execute(
-        select(Profile).where(
-            Profile.client_id == client_id,
-            Profile.is_active.is_(True),
-            Profile.resume_summary.is_not(None),
+        select(ResumeType).where(
+            ResumeType.profile_id == profile_id,
+            ResumeType.is_active.is_(True),
+            ResumeType.resume_summary.is_not(None),
         )
     )
     return [
-        {"id": str(p.id), "name": p.name, "summary": p.resume_summary, "skills": p.skills}
-        for p in result.scalars().all()
+        {"id": str(r.id), "name": r.name, "summary": r.resume_summary, "skills": r.skills}
+        for r in result.scalars().all()
     ]
 
 
@@ -61,18 +78,21 @@ async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: Ana
         raise AppError("no_api_key", "No OpenAI API key configured for this client", 400)
     api_key = await get_decrypted_key_for_client(db, client_id)
 
-    profiles = await _active_profiles_context(db, client_id)
-    if not profiles:
+    profile = await _resolve_profile(
+        db, user=user, client_id=client_id, profile_id=payload.profile_id
+    )
+    resumes = await _resumes_context(db, profile.id)
+    if not resumes:
         raise AppError(
             "no_resumes",
-            "No resumes to compare against yet. Upload a resume under Resume Types first.",
+            f"{profile.name} has no uploaded resumes yet. Upload one under Resume Types first.",
             400,
         )
     outcome = await analyze_job_description(
         api_key=api_key,
         model=ai_settings.model,
         job_description=payload.job_description,
-        profiles=profiles,
+        resumes=resumes,
     )
 
     jd_hash = normalize_jd_hash(payload.job_description)
@@ -86,18 +106,17 @@ async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: Ana
 async def save_analysis(
     db: AsyncSession, *, user: User, client_id: UUID, payload: SaveAnalysisRequest
 ) -> AnalysisOut:
-    selected_profile_id = payload.selected_profile_id
-    if user.role == Role.BIDDER:
-        # A bidder can only ever save under their one assigned profile.
-        selected_profile_id = user.assigned_profile_id
-
-    if selected_profile_id is not None:
-        profile = await db.get(Profile, selected_profile_id)
-        if profile is None or profile.client_id != client_id:
-            raise AppError("invalid_profile", "Profile does not belong to this client", 400)
+    profile = await _resolve_profile(
+        db, user=user, client_id=client_id, profile_id=payload.profile_id
+    )
+    selected_resume_type_id = payload.selected_resume_type_id
+    if selected_resume_type_id is not None:
+        resume_type = await db.get(ResumeType, selected_resume_type_id)
+        if resume_type is None or resume_type.profile_id != profile.id:
+            raise AppError("invalid_resume_type", "That resume isn't in this profile", 400)
 
     record_status = await initial_record_status(
-        db, client_id=client_id, profile_id=selected_profile_id, user=user
+        db, client_id=client_id, profile_id=profile.id, user=user
     )
 
     analysis = Analysis(
@@ -108,12 +127,13 @@ async def save_analysis(
         job_description=payload.job_description,
         jd_hash=normalize_jd_hash(payload.job_description),
         job_link=payload.job_link,
-        recommended_profile_id=(
-            UUID(payload.result.recommended_profile_id)
-            if payload.result.recommended_profile_id
+        profile_id=profile.id,
+        recommended_resume_type_id=(
+            UUID(payload.result.recommended_resume_type_id)
+            if payload.result.recommended_resume_type_id
             else None
         ),
-        selected_profile_id=selected_profile_id,
+        selected_resume_type_id=selected_resume_type_id,
         result=payload.result.model_dump(),
         model=payload.model,
         prompt_version=payload.prompt_version,
@@ -137,8 +157,9 @@ def _build_out(analysis: Analysis, *, creator_name: str) -> AnalysisOut:
         position_name=analysis.position_name,
         job_description=analysis.job_description,
         job_link=analysis.job_link,
-        recommended_profile_id=analysis.recommended_profile_id,
-        selected_profile_id=analysis.selected_profile_id,
+        profile_id=analysis.profile_id,
+        recommended_resume_type_id=analysis.recommended_resume_type_id,
+        selected_resume_type_id=analysis.selected_resume_type_id,
         result=analysis.result,
         model=analysis.model,
         prompt_version=analysis.prompt_version,
@@ -175,7 +196,7 @@ async def list_analyses(
             Analysis.company_name.ilike(pattern) | Analysis.position_name.ilike(pattern)
         )
     if profile_id is not None:
-        stmt = stmt.where(Analysis.selected_profile_id == profile_id)
+        stmt = stmt.where(Analysis.profile_id == profile_id)
     if date_from is not None:
         stmt = stmt.where(Analysis.created_at >= datetime.combine(date_from, time.min, UTC))
     if date_to is not None:

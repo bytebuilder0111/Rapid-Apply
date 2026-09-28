@@ -39,7 +39,7 @@ strict. Return:
 5. secondary_skills, seniority, key_requirements: from the JD.
 6. resume_checks: exactly one entry for EVERY resume, in the order given. Read each resume's
    summary and key skills carefully before filling it in:
-   - profile_id: that resume's id, exactly as given.
+   - resume_id: that resume's id, exactly as given.
    - matching_technologies: the technologies from jd_core_stack that this resume has.
      Empty if none.
    - same_role: true only if the resume is the same kind of engineer the job hires (e.g. an
@@ -51,10 +51,10 @@ strict. Return:
      technologies. Refer to the resume by its name, never by its id."""
 
 
-def build_user_prompt(job_description: str, profiles: list[dict]) -> str:
+def build_user_prompt(job_description: str, resumes: list[dict]) -> str:
     resume_lines = "\n".join(
         f"- id={p['id']} name={p['name']!r}\n  summary: {p['summary']}\n"
         f"  key_skills: {', '.join(p['skills'])}"
-        for p in profiles
+        for p in resumes
     )
     return f"Resumes:\n{resume_lines}\n\nJob description:\n{job_description.strip()}"

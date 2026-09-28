@@ -35,24 +35,33 @@ import {
 import { adminApi } from "@/lib/admin-api";
 import { ApiError } from "@/lib/api";
 import { profilesApi } from "@/lib/profiles-api";
-import type { Profile } from "@/lib/types";
+import { resumeTypesApi } from "@/lib/resume-types-api";
+import type { Profile, ResumeType } from "@/lib/types";
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-function ProfileRow({ profile, clientName }: { profile: Profile; clientName: string }) {
+function ProfileRow({
+  profile,
+  clientName,
+  resumeTypes,
+}: {
+  profile: Profile;
+  clientName: string;
+  resumeTypes: ResumeType[];
+}) {
   const queryClient = useQueryClient();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const remove = useMutation({
     mutationFn: () => profilesApi.remove(profile.id),
     onSuccess: async () => {
-      toast.success("Resume type deleted");
+      toast.success("Profile deleted");
       setDeleteOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["admin", "profiles"] });
     },
-    onError: (error) => toast.error(errorMessage(error, "Couldn't delete resume type")),
+    onError: (error) => toast.error(errorMessage(error, "Couldn't delete profile")),
   });
 
   return (
@@ -60,13 +69,17 @@ function ProfileRow({ profile, clientName }: { profile: Profile; clientName: str
       <TableCell className="font-medium">{profile.name}</TableCell>
       <TableCell>{clientName}</TableCell>
       <TableCell className="max-w-md">
-        {profile.resume_summary ? (
-          <div className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">{profile.resume_filename}</span>
-            <span className="text-sm whitespace-normal">{profile.resume_summary}</span>
+        {resumeTypes.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {resumeTypes.map((r) => (
+              <Badge key={r.id} variant={r.resume_summary ? "secondary" : "outline"}>
+                {r.name}
+                {!r.resume_summary && " (no resume)"}
+              </Badge>
+            ))}
           </div>
         ) : (
-          <span className="text-sm text-muted-foreground">No resume uploaded</span>
+          <span className="text-sm text-muted-foreground">No resume types</span>
         )}
       </TableCell>
       <TableCell>
@@ -83,8 +96,8 @@ function ProfileRow({ profile, clientName }: { profile: Profile; clientName: str
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {profile.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Bidders assigned to this resume type will be unassigned. This can&apos;t be
-              undone.
+              This also deletes its resume types and Google Sheet setting. Bidders assigned to
+              it will be unassigned. This can&apos;t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -111,12 +124,17 @@ export default function AdminProfilesPage() {
     queryFn: () => profilesApi.list(clientId),
     enabled: Boolean(clientId),
   });
+  const { data: resumeTypes } = useQuery({
+    queryKey: ["admin", "resume-types", clientId],
+    queryFn: () => resumeTypesApi.list({ clientId }),
+    enabled: Boolean(clientId),
+  });
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Resume Types</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        View and manage resume types across clients.
+        View each client&apos;s profiles (the people they bid as) and their resume types.
       </p>
 
       <div className="mt-4 max-w-xs">
@@ -136,11 +154,11 @@ export default function AdminProfilesPage() {
 
       <div className="mt-6 rounded-lg border">
         {!clientId && (
-          <p className="p-4 text-sm text-muted-foreground">Pick a client to view its resume types.</p>
+          <p className="p-4 text-sm text-muted-foreground">Pick a client to view its profiles.</p>
         )}
         {clientId && isLoading && <Skeleton className="m-4 h-32" />}
         {clientId && isError && (
-          <p className="p-4 text-sm text-destructive">Couldn&apos;t load resume types.</p>
+          <p className="p-4 text-sm text-destructive">Couldn&apos;t load profiles.</p>
         )}
         {clientId && data && (
           <Table>
@@ -148,7 +166,7 @@ export default function AdminProfilesPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Client</TableHead>
-                <TableHead>Resume</TableHead>
+                <TableHead>Resume types</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -157,7 +175,7 @@ export default function AdminProfilesPage() {
               {data.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No resume types for this client.
+                    No profiles for this client.
                   </TableCell>
                 </TableRow>
               )}
@@ -166,6 +184,7 @@ export default function AdminProfilesPage() {
                   key={p.id}
                   profile={p}
                   clientName={clients?.find((c) => c.id === clientId)?.name ?? ""}
+                  resumeTypes={(resumeTypes ?? []).filter((r) => r.profile_id === p.id)}
                 />
               ))}
             </TableBody>

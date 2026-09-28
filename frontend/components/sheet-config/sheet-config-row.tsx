@@ -79,7 +79,7 @@ function SheetConfigRow({ config }: { config: SheetConfig }) {
   const clear = useMutation({
     mutationFn: () => sheetConfigsApi.clear(config.profile_id),
     onSuccess: async () => {
-      toast.success("Sheet cleared; analyses for this resume type won't be recorded");
+      toast.success("Sheet cleared; this profile's analyses won't be recorded");
       await invalidate();
     },
     onError: (error) => toast.error(errorMessage(error, "Couldn't clear the sheet")),
@@ -93,8 +93,8 @@ function SheetConfigRow({ config }: { config: SheetConfig }) {
       <CardHeader>
         <CardTitle className="text-base">{config.profile_name}</CardTitle>
         <CardDescription>
-          When a sheet is saved, every analysis saved with this resume type is added to it as a
-          new row.
+          Every analysis saved for this profile, whichever resume it used, is added to this
+          sheet as a new row.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -193,8 +193,8 @@ function SheetConfigRow({ config }: { config: SheetConfig }) {
   );
 }
 
-/** Google Sheet settings for the current user's resume types (all of a client's, or a
- *  bidder's one assigned type). Requires the client's Google account to be connected. */
+/** Google Sheet settings for the current user's profiles (all of a client's, or a
+    bidder's one assigned profile). Requires the client's Google account to be connected. */
 export function SheetConfigList() {
   const { user } = useAuth();
   const google = useQuery({
@@ -247,8 +247,8 @@ export function SheetConfigList() {
       {configs.data?.length === 0 && (
         <p className="text-sm text-muted-foreground">
           {user?.role === "CLIENT"
-            ? "No active resume types yet. Create one under Resume Types first."
-            : "You don't have an assigned resume type yet."}
+            ? "No active profiles yet. Create one under Resume Types first."
+            : "You don't have an assigned profile yet."}
         </p>
       )}
       {configs.data?.map((config) => <SheetConfigRow key={config.profile_id} config={config} />)}

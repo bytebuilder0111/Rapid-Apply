@@ -5,7 +5,7 @@ export default function BidderConfigPage() {
     <div className="max-w-2xl">
       <h1 className="text-2xl font-semibold tracking-tight">Config</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Your personal Google Sheet for your assigned resume type. When set, it&apos;s used instead
+        Your personal Google Sheet for your assigned profile. When set, it&apos;s used instead
         of your client&apos;s sheet for your own analyses.
       </p>
       <div className="mt-6">

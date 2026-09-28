@@ -16,7 +16,8 @@ export type AnalysisResult = {
   secondary_skills: string[];
   seniority: Seniority;
   key_requirements: string[];
-  recommended_profile_id: string | null;
+  /** Best-fitting resume type within the chosen profile, or null for a "Dismatched JD". */
+  recommended_resume_type_id?: string | null;
   confidence: number;
   reasoning: string;
 };
@@ -32,8 +33,10 @@ export type Analysis = {
   position_name: string;
   job_description: string;
   job_link: string | null;
-  recommended_profile_id: string | null;
-  selected_profile_id: string | null;
+  /** The profile (person) this JD was compared against. */
+  profile_id: string | null;
+  recommended_resume_type_id: string | null;
+  selected_resume_type_id: string | null;
   result: AnalysisResult;
   model: string;
   prompt_version: string;
@@ -50,6 +53,8 @@ export type AnalyzeInput = {
   position_name: string;
   job_description: string;
   job_link?: string | null;
+  /** Required for a client; ignored for a bidder (always their assigned profile). */
+  profile_id?: string | null;
 };
 
 export type AnalyzeOutput = {
@@ -63,7 +68,7 @@ export type AnalyzeOutput = {
 };
 
 export type SaveAnalysisInput = AnalyzeInput & {
-  selected_profile_id?: string | null;
+  selected_resume_type_id?: string | null;
   result: AnalysisResult;
   model: string;
   prompt_version: string;

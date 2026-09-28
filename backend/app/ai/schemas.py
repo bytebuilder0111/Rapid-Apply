@@ -25,14 +25,14 @@ class AnalysisResult(BaseModel):
     secondary_skills: list[str] = Field(default_factory=list)
     seniority: Seniority
     key_requirements: list[str] = Field(default_factory=list)
-    # The best-fitting resume (profile) id, or None for a "Dismatched JD".
-    recommended_profile_id: str | None = None
+    # The best-fitting resume type's id, or None for a "Dismatched JD".
+    recommended_resume_type_id: str | None = None
     confidence: float = Field(ge=0, le=1)
     reasoning: str
 
 
 class ResumeCheck(BaseModel):
-    profile_id: str
+    resume_id: str
     matching_technologies: list[str]
     same_role: bool
     fit: float = Field(ge=0, le=1)

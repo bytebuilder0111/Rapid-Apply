@@ -33,6 +33,7 @@ import {
 import { analysisApi, type Analysis, type RecordStatus } from "@/lib/analysis-api";
 import { ApiError } from "@/lib/api";
 import { profilesApi } from "@/lib/profiles-api";
+import { resumeTypesApi } from "@/lib/resume-types-api";
 
 const STATUS_VARIANT: Record<RecordStatus, "default" | "secondary" | "destructive"> = {
   SUCCESS: "default",
@@ -45,12 +46,12 @@ function ViewAnalysisDialog({
   analysis,
   open,
   onOpenChange,
-  profileName,
+  resumeName,
 }: {
   analysis: Analysis;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  profileName: (id: string) => string | undefined;
+  resumeName: (id: string) => string | undefined;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -74,7 +75,7 @@ function ViewAnalysisDialog({
           {analysis.record_status === "FAILED" && analysis.record_error && (
             <p className="text-sm text-destructive">Sheet write failed: {analysis.record_error}</p>
           )}
-          <ResultCard result={analysis.result} profileName={profileName} />
+          <ResultCard result={analysis.result} resumeName={resumeName} />
         </div>
       </DialogContent>
     </Dialog>
@@ -109,11 +110,22 @@ export function AnalysisHistory() {
     queryFn: () => analysisApi.list({ search: search || undefined, profile_id: profileId || undefined }),
   });
 
+  // All of the client's (or the bidder's profile's) resume types, for naming best fit / used.
+  const { data: resumeTypes } = useQuery({
+    queryKey: ["resume-types", "all"],
+    queryFn: () => resumeTypesApi.list(),
+  });
+
   const profileNameById = useMemo(() => {
     const map = new Map<string, string>();
     (profiles ?? []).forEach((p) => map.set(p.id, p.name));
     return map;
   }, [profiles]);
+  const resumeNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    (resumeTypes ?? []).forEach((r) => map.set(r.id, r.name));
+    return map;
+  }, [resumeTypes]);
 
   return (
     <div className="mt-8">
@@ -128,7 +140,7 @@ export function AnalysisHistory() {
         />
         <Select value={profileId} onValueChange={(v) => setProfileId(v ?? "")}>
           <SelectTrigger className="w-48">
-            <SelectValue placeholder="Filter by resume used" />
+            <SelectValue placeholder="Filter by profile" />
           </SelectTrigger>
           <SelectContent>
             {(profiles ?? []).map((p) => (
@@ -150,6 +162,7 @@ export function AnalysisHistory() {
                 <TableHead>Date</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Position</TableHead>
+                <TableHead>Profile</TableHead>
                 <TableHead>Best fit</TableHead>
                 <TableHead>Resume used</TableHead>
                 <TableHead>Status</TableHead>
@@ -159,7 +172,7 @@ export function AnalysisHistory() {
             <TableBody>
               {data.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     No analyses yet.
                   </TableCell>
                 </TableRow>
@@ -170,8 +183,11 @@ export function AnalysisHistory() {
                   <TableCell className="font-medium">{a.company_name}</TableCell>
                   <TableCell>{a.position_name}</TableCell>
                   <TableCell>
-                    {a.result.recommended_profile_id ? (
-                      (profileNameById.get(a.result.recommended_profile_id) ?? "—")
+                    {a.profile_id ? (profileNameById.get(a.profile_id) ?? "—") : "—"}
+                  </TableCell>
+                  <TableCell>
+                    {a.recommended_resume_type_id ? (
+                      (resumeNameById.get(a.recommended_resume_type_id) ?? "—")
                     ) : isDismatched(a.result) ? (
                       <Badge variant="destructive">Dismatched JD</Badge>
                     ) : (
@@ -179,8 +195,8 @@ export function AnalysisHistory() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {a.selected_profile_id
-                      ? (profileNameById.get(a.selected_profile_id) ?? "—")
+                    {a.selected_resume_type_id
+                      ? (resumeNameById.get(a.selected_resume_type_id) ?? "—")
                       : "—"}
                   </TableCell>
                   <TableCell>
@@ -215,7 +231,7 @@ export function AnalysisHistory() {
           analysis={viewing}
           open={Boolean(viewing)}
           onOpenChange={(open) => !open && setViewing(null)}
-          profileName={(id) => profileNameById.get(id)}
+          resumeName={(id) => resumeNameById.get(id)}
         />
       )}
     </div>

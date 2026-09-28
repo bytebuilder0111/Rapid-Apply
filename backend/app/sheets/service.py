@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import Callable
 from uuid import UUID
 
@@ -13,13 +14,28 @@ from app.errors import AppError
 from app.integrations import google_service
 from app.models import Role, User
 from app.profiles.models import Profile
+from app.resume_types.models import ResumeType
 from app.sheets.models import SheetConfig
 from app.sheets.schemas import SaveSheetConfigRequest, SheetConfigOut, SpreadsheetOut
 from app.sheets.writer import SheetsWriter
 
 
+def _google_error(exc: HttpError) -> dict:
+    try:
+        return json.loads(exc.content).get("error", {})
+    except (ValueError, AttributeError):
+        return {}
+
+
 def _http_error_message(exc: HttpError) -> str:
     status = getattr(exc.resp, "status", None)
+    error = _google_error(exc)
+    reasons = {d.get("reason") for d in error.get("details", []) if isinstance(d, dict)}
+    if "SERVICE_DISABLED" in reasons or "has not been used in project" in error.get("message", ""):
+        # e.g. "Google Drive API has not been used in project ... or it is disabled."
+        return error["message"].split(" Enable it by visiting")[0] + (
+            " Enable it in Google Cloud Console > APIs & Services > Library, then retry."
+        )
     if status == 403:
         return "Access denied. Share the sheet with the connected Google account."
     if status == 404:
@@ -104,7 +120,7 @@ async def list_configs_for_client(db: AsyncSession, client_id: UUID) -> list[She
 
 def _bidder_profile_id(user: User) -> UUID:
     if user.assigned_profile_id is None:
-        raise AppError("no_assigned_profile", "You have no assigned resume type yet", 400)
+        raise AppError("no_assigned_profile", "You have no assigned profile yet", 400)
     return user.assigned_profile_id
 
 
@@ -164,7 +180,7 @@ async def _clear(
 async def _client_profile(db: AsyncSession, client_id: UUID, profile_id: UUID) -> Profile:
     profile = await db.get(Profile, profile_id)
     if profile is None or profile.client_id != client_id:
-        raise AppError("not_found", "Resume type not found", 404)
+        raise AppError("not_found", "Profile not found", 404)
     return profile
 
 
@@ -268,7 +284,7 @@ async def initial_record_status(
     return RecordStatus.PENDING if _is_eligible(config) else RecordStatus.SKIPPED
 
 
-def _build_row(analysis: Analysis, profile_name: str, recorded_by: str) -> list[str]:
+def _build_row(analysis: Analysis, resume_name: str, recorded_by: str) -> list[str]:
     result = analysis.result
     return [
         analysis.created_at.isoformat(),
@@ -279,7 +295,7 @@ def _build_row(analysis: Analysis, profile_name: str, recorded_by: str) -> list[
         result.get("backend_framework") or "",
         ", ".join(result.get("secondary_skills", [])),
         result.get("seniority", ""),
-        profile_name,
+        resume_name,
         recorded_by,
         str(result.get("confidence", "")),
     ]
@@ -298,7 +314,7 @@ async def record_analysis(analysis_id: UUID) -> None:
             await resolve_config(
                 db,
                 client_id=analysis.client_id,
-                profile_id=analysis.selected_profile_id,
+                profile_id=analysis.profile_id,
                 user=creator,
             )
             if creator is not None
@@ -310,13 +326,17 @@ async def record_analysis(analysis_id: UUID) -> None:
             return
         assert config is not None
 
-        profile = await db.get(Profile, analysis.selected_profile_id)
+        resume_type = (
+            await db.get(ResumeType, analysis.selected_resume_type_id)
+            if analysis.selected_resume_type_id
+            else None
+        )
         analysis.record_attempts += 1
         try:
             refresh_token = await google_service.get_decrypted_refresh_token(db, analysis.client_id)
             writer = SheetsWriter(refresh_token)
             row = _build_row(
-                analysis, profile.name if profile else "", creator.name if creator else ""
+                analysis, resume_type.name if resume_type else "", creator.name if creator else ""
             )
             await asyncio.to_thread(writer.ensure_header, config.spreadsheet_id, config.sheet_name)
             await asyncio.to_thread(

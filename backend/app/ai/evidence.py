@@ -67,12 +67,12 @@ def verified_core_stack(claimed: list[str], job_description: str) -> list[str]:
     return verified
 
 
-def _names(profiles: list[dict]) -> str:
-    return ", ".join(p["name"] for p in profiles)
+def _names(resumes: list[dict]) -> str:
+    return ", ".join(r["name"] for r in resumes)
 
 
 def decide_match(
-    response: AnalysisResponse, job_description: str, profiles: list[dict]
+    response: AnalysisResponse, job_description: str, resumes: list[dict]
 ) -> AnalysisResult:
     jd_tokens = _tokens(job_description)
     core = verified_core_stack(response.jd_core_stack, job_description)
@@ -84,10 +84,10 @@ def decide_match(
     if not main_skill or not _named_in(main_skill, jd_tokens) or _is_generic(main_skill):
         main_skill = ", ".join(core[:2]) or "Not specified"
 
-    checks = {c.profile_id: c for c in response.resume_checks}
-    # Profiles that really contain a named core technology, with what they match on.
+    checks = {c.resume_id: c for c in response.resume_checks}
+    # Resumes that really contain a named core technology, with what they match on.
     with_stack = []
-    for p in profiles:
+    for p in resumes:
         resume_tokens = _tokens(" ".join(p["skills"]) + " " + p["summary"])
         overlap = [t for t in core if _named_in(t, resume_tokens)]
         if overlap:
@@ -137,7 +137,7 @@ def decide_match(
         secondary_skills=response.secondary_skills,
         seniority=response.seniority,
         key_requirements=response.key_requirements,
-        recommended_profile_id=recommended,
+        recommended_resume_type_id=recommended,
         confidence=confidence,
         reasoning=reasoning,
     )

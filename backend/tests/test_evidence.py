@@ -31,7 +31,7 @@ Git workflows."""
 
 def _check(pid: str, *, same_role: bool = True, fit: float = 0.9) -> ResumeCheck:
     return ResumeCheck(
-        profile_id=pid, matching_technologies=[], same_role=same_role, fit=fit, note=f"{pid} note."
+        resume_id=pid, matching_technologies=[], same_role=same_role, fit=fit, note=f"{pid} note."
     )
 
 
@@ -65,7 +65,7 @@ def test_stack_the_jd_never_names_is_dropped_and_declined() -> None:
     )
     out = decide_match(response, STACKLESS_JD, PROFILES)
     assert out.jd_core_stack == []
-    assert out.recommended_profile_id is None
+    assert out.recommended_resume_type_id is None
     assert out.confidence == 0.0
     assert out.main_backend_skill == "Not specified"
     assert out.backend_framework is None
@@ -77,7 +77,7 @@ def test_generic_tools_never_count_as_core_stack() -> None:
     response = _response(core=["CI/CD", "Git"], checks=_all_checks(node=_check("node")))
     out = decide_match(response, STACKLESS_JD, PROFILES)
     assert out.jd_core_stack == []
-    assert out.recommended_profile_id is None
+    assert out.recommended_resume_type_id is None
 
 
 def test_code_finds_the_match_the_model_can_only_assess() -> None:
@@ -88,7 +88,7 @@ def test_code_finds_the_match_the_model_can_only_assess() -> None:
         checks=_all_checks(ios=_check("ios", fit=0.85)),
     )
     out = decide_match(response, jd, PROFILES)
-    assert out.recommended_profile_id == "ios"
+    assert out.recommended_resume_type_id == "ios"
     assert out.confidence == 0.85
     assert out.reasoning == "ios note. Matches on: Swift."
 
@@ -98,7 +98,7 @@ def test_same_language_on_a_different_platform_is_declined() -> None:
     jd = "Android engineer: Kotlin and Java for our mobile app."
     response = _response(role_type="mobile", core=["Kotlin", "Java"], checks=_all_checks())
     out = decide_match(response, jd, PROFILES)
-    assert out.recommended_profile_id is None
+    assert out.recommended_resume_type_id is None
     assert "Java Backend shares part of the named stack" in out.reasoning
     assert "different kind of role than this mobile job" in out.reasoning
 
@@ -109,7 +109,7 @@ def test_no_resume_has_the_named_stack() -> None:
         core=["Python", "Django"], checks=_all_checks(java=_check("java", fit=0.8))
     )
     out = decide_match(response, jd, PROFILES)
-    assert out.recommended_profile_id is None
+    assert out.recommended_resume_type_id is None
     assert out.reasoning == "None of your resumes include the stack this JD names (Python, Django)."
 
 
@@ -117,7 +117,7 @@ def test_weak_fit_is_declined_even_with_stack_and_role() -> None:
     jd = "Node.js engineer for embedded firmware tooling."
     response = _response(core=["Node.js"], checks=_all_checks(node=_check("node", fit=0.3)))
     out = decide_match(response, jd, PROFILES)
-    assert out.recommended_profile_id is None
+    assert out.recommended_resume_type_id is None
     assert out.reasoning.startswith("The closest resume, Node, fits only 30%.")
 
 
@@ -128,20 +128,20 @@ def test_highest_fit_candidate_wins() -> None:
         checks=_all_checks(node=_check("node", fit=0.7), java=_check("java", fit=0.9)),
     )
     out = decide_match(response, jd, PROFILES)
-    assert out.recommended_profile_id == "java"
+    assert out.recommended_resume_type_id == "java"
     assert out.reasoning.endswith("Matches on: Java, Spring Boot.")
 
 
 def test_java_does_not_match_javascript() -> None:
     jd = "Backend role: JavaScript services."
     response = _response(core=["JavaScript"], checks=_all_checks(java=_check("java")))
-    assert decide_match(response, jd, PROFILES).recommended_profile_id is None
+    assert decide_match(response, jd, PROFILES).recommended_resume_type_id is None
 
 
 def test_spelling_variants_still_match() -> None:
     jd = "We use NodeJS and Postgres."
     response = _response(core=["NodeJS"], checks=_all_checks(node=_check("node")))
-    assert decide_match(response, jd, PROFILES).recommended_profile_id == "node"
+    assert decide_match(response, jd, PROFILES).recommended_resume_type_id == "node"
 
 
 def test_multi_word_framework_needs_every_word_in_the_jd() -> None:
@@ -149,4 +149,4 @@ def test_multi_word_framework_needs_every_word_in_the_jd() -> None:
     response = _response(core=["Java", "Spring Boot"], checks=_all_checks(java=_check("java")))
     out = decide_match(response, jd, PROFILES)
     assert out.jd_core_stack == ["Java"]
-    assert out.recommended_profile_id == "java"
+    assert out.recommended_resume_type_id == "java"

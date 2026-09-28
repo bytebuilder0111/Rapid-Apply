@@ -48,7 +48,7 @@ def _fake_openai(*parsed_results) -> MagicMock:
 
 def _check(pid: str, *, same_role: bool, fit: float) -> ResumeCheck:
     return ResumeCheck(
-        profile_id=pid, matching_technologies=[], same_role=same_role, fit=fit, note=f"{pid} note."
+        resume_id=pid, matching_technologies=[], same_role=same_role, fit=fit, note=f"{pid} note."
     )
 
 
@@ -107,9 +107,9 @@ async def test_analyze_retries_when_a_resume_was_skipped() -> None:
     fake = _fake_openai(skipped, _response())
     with patch("app.ai.service.AsyncOpenAI", fake):
         outcome = await analyze_job_description(
-            api_key="k", model="gpt-4o-mini", job_description=PYTHON_JD, profiles=PROFILES
+            api_key="k", model="gpt-4o-mini", job_description=PYTHON_JD, resumes=PROFILES
         )
-    assert outcome.result.recommended_profile_id == "p1"
+    assert outcome.result.recommended_resume_type_id == "p1"
     assert outcome.result.confidence == 0.9
     assert outcome.result.jd_summary == "Senior backend role building Python APIs."
     assert fake.return_value.chat.completions.parse.await_count == 2
@@ -124,9 +124,9 @@ async def test_analyze_allows_dismatched_jd() -> None:
     )
     with patch("app.ai.service.AsyncOpenAI", _fake_openai(all_other_roles)):
         outcome = await analyze_job_description(
-            api_key="k", model="gpt-4o-mini", job_description=PYTHON_JD, profiles=PROFILES
+            api_key="k", model="gpt-4o-mini", job_description=PYTHON_JD, resumes=PROFILES
         )
-    assert outcome.result.recommended_profile_id is None
+    assert outcome.result.recommended_resume_type_id is None
 
 
 def test_old_saved_result_omits_new_fields() -> None:
@@ -140,8 +140,9 @@ def test_old_saved_result_omits_new_fields() -> None:
             position_name="p",
             job_description="jd",
             job_link=None,
-            recommended_profile_id=None,
-            selected_profile_id=None,
+            profile_id=None,
+            recommended_resume_type_id=None,
+            selected_resume_type_id=None,
             result=result,
             model="m",
             prompt_version="v",

@@ -24,19 +24,19 @@ const SENIORITY_LABEL: Record<AnalysisResult["seniority"], string> = {
 
 /** True when the AI compared this JD against resume summaries and none fit. */
 export function isDismatched(result: AnalysisResult): boolean {
-  return result.jd_summary !== undefined && result.recommended_profile_id === null;
+  return result.jd_summary !== undefined && !result.recommended_resume_type_id;
 }
 
 export function ResultCard({
   result,
-  profileName,
+  resumeName,
 }: {
   result: AnalysisResult;
   /** Looks up a resume type's name by id (undefined if it was deleted). */
-  profileName: (id: string) => string | undefined;
+  resumeName: (id: string) => string | undefined;
 }) {
-  const bestName = result.recommended_profile_id
-    ? (profileName(result.recommended_profile_id) ?? "A deleted resume type")
+  const bestName = result.recommended_resume_type_id
+    ? (resumeName(result.recommended_resume_type_id) ?? "A deleted resume type")
     : null;
 
   return (

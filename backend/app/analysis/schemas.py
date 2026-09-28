@@ -12,6 +12,9 @@ class AnalyzeRequest(BaseModel):
     position_name: str = Field(min_length=1, max_length=255)
     job_description: str = Field(min_length=1)
     job_link: str | None = None
+    # Whose resumes to compare against. Required for a client; a bidder always uses their
+    # assigned profile, so it's ignored for them.
+    profile_id: UUID | None = None
 
 
 class AnalyzeResponse(BaseModel):
@@ -29,7 +32,8 @@ class SaveAnalysisRequest(BaseModel):
     position_name: str = Field(min_length=1, max_length=255)
     job_description: str = Field(min_length=1)
     job_link: str | None = None
-    selected_profile_id: UUID | None = None
+    profile_id: UUID | None = None
+    selected_resume_type_id: UUID | None = None
     result: AnalysisResult
     model: str
     prompt_version: str
@@ -46,8 +50,9 @@ class AnalysisOut(BaseModel):
     position_name: str
     job_description: str
     job_link: str | None
-    recommended_profile_id: UUID | None
-    selected_profile_id: UUID | None
+    profile_id: UUID | None
+    recommended_resume_type_id: UUID | None
+    selected_resume_type_id: UUID | None
     result: AnalysisResult
     model: str
     prompt_version: str

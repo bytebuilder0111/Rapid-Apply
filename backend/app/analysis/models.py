@@ -31,11 +31,15 @@ class Analysis(Base):
     job_description: Mapped[str] = mapped_column(Text, nullable=False)
     jd_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     job_link: Mapped[str | None] = mapped_column(String(2048), nullable=True)
-    recommended_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+    # The profile (person) whose resumes this JD was compared against.
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
     )
-    selected_profile_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    recommended_resume_type_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resume_types.id", ondelete="SET NULL"), nullable=True
+    )
+    selected_resume_type_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resume_types.id", ondelete="SET NULL"), nullable=True
     )
     result: Mapped[dict] = mapped_column(JSONB, nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)

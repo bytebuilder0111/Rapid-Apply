@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { analysisApi, type AnalyzeOutput } from "@/lib/analysis-api";
 import { ApiError } from "@/lib/api";
 import { profilesApi } from "@/lib/profiles-api";
+import { resumeTypesApi } from "@/lib/resume-types-api";
 
 const formSchema = z.object({
   company_name: z.string().min(1, "Company name is required."),
@@ -104,7 +105,9 @@ export function ResumeSelector() {
   const queryClient = useQueryClient();
   const [analyzeOutput, setAnalyzeOutput] = useState<AnalyzeOutput | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
-  const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const isBidder = user?.role === "BIDDER";
+  const [chosenProfileId, setChosenProfileId] = useState<string>("");
+  const [selectedResumeTypeId, setSelectedResumeTypeId] = useState<string>("");
   const resultRef = useRef<HTMLDivElement>(null);
 
   const scrollToResult = () =>
@@ -116,15 +119,33 @@ export function ResumeSelector() {
     queryKey: ["profiles"],
     queryFn: () => profilesApi.list(),
   });
+  const activeProfiles = useMemo(
+    () => (allProfiles ?? []).filter((p) => p.is_active),
+    [allProfiles],
+  );
 
-  // A bidder is limited to their one assigned profile; a client can pick any active one.
-  const selectableProfiles = useMemo(() => {
-    if (!allProfiles) return [];
-    if (user?.role === "BIDDER") {
-      return allProfiles.filter((p) => p.id === user.assigned_profile_id);
-    }
-    return allProfiles.filter((p) => p.is_active);
-  }, [allProfiles, user]);
+  // A bidder always works with their one assigned profile; a client picks one.
+  const profileId = isBidder ? (user?.assigned_profile_id ?? "") : chosenProfileId;
+  const profile = allProfiles?.find((p) => p.id === profileId);
+
+  useEffect(() => {
+    const first = activeProfiles[0];
+    if (!isBidder && !chosenProfileId && first) setChosenProfileId(first.id);
+  }, [isBidder, chosenProfileId, activeProfiles]);
+
+  const { data: resumeTypes } = useQuery({
+    queryKey: ["resume-types", profileId],
+    queryFn: () => resumeTypesApi.list({ profileId }),
+    enabled: Boolean(profileId),
+  });
+  const usableResumeTypes = (resumeTypes ?? []).filter((r) => r.is_active);
+
+  const changeProfile = (id: string) => {
+    setChosenProfileId(id);
+    setAnalyzeOutput(null);
+    setAnalyzeError(null);
+    setSelectedResumeTypeId("");
+  };
 
   const {
     register,
@@ -134,6 +155,10 @@ export function ResumeSelector() {
   } = useForm<FormValues>({ resolver: zodResolver(formSchema) });
 
   const onAnalyze = async (values: FormValues) => {
+    if (!profileId) {
+      toast.error(isBidder ? "You have no assigned profile yet." : "Choose a profile first.");
+      return;
+    }
     setAnalyzeOutput(null);
     setAnalyzeError(null);
     scrollToResult();
@@ -143,11 +168,12 @@ export function ResumeSelector() {
         position_name: values.position_name,
         job_description: values.job_description,
         job_link: values.job_link || null,
+        profile_id: profileId,
       });
       setAnalyzeOutput(output);
-      setSelectedProfileId(output.result.recommended_profile_id ?? "");
+      setSelectedResumeTypeId(output.result.recommended_resume_type_id ?? "");
       if (isDismatched(output.result)) {
-        toast.warning("Dismatched JD: none of your resumes fit this job.");
+        toast.warning(`Dismatched JD: none of ${profile?.name ?? "this profile"}'s resumes fit this job.`);
       }
       if (output.duplicate_warning) {
         toast.warning(output.duplicate_reason ?? "This job was already analyzed.");
@@ -169,7 +195,8 @@ export function ResumeSelector() {
         position_name: values.position_name,
         job_description: values.job_description,
         job_link: values.job_link || null,
-        selected_profile_id: selectedProfileId || null,
+        profile_id: profileId,
+        selected_resume_type_id: selectedResumeTypeId || null,
         result: analyzeOutput.result,
         model: analyzeOutput.model,
         prompt_version: analyzeOutput.prompt_version,
@@ -180,14 +207,14 @@ export function ResumeSelector() {
     onSuccess: async () => {
       toast.success("Analysis saved");
       setAnalyzeOutput(null);
-      setSelectedProfileId("");
+      setSelectedResumeTypeId("");
       reset();
       await queryClient.invalidateQueries({ queryKey: ["analyses"] });
     },
     onError: (error) => toast.error(errorMessage(error, "Couldn't save analysis")),
   });
 
-  const profileName = (id: string) => allProfiles?.find((p) => p.id === id)?.name;
+  const resumeName = (id: string) => resumeTypes?.find((r) => r.id === id)?.name;
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -195,12 +222,37 @@ export function ResumeSelector() {
         <CardHeader>
           <CardTitle>Resume Selector</CardTitle>
           <CardDescription>
-            Paste a job description. The AI summarizes it and picks which of your resumes fits
-            best.
+            Paste a job description. The AI summarizes it and picks which of the profile&apos;s
+            resumes fits best.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit(onAnalyze)}>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="profile">Profile</Label>
+              {isBidder ? (
+                <p className="text-sm font-medium">
+                  {profile?.name ?? "No profile assigned yet. Ask your client to assign one."}
+                </p>
+              ) : (
+                <select
+                  id="profile"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                  value={chosenProfileId}
+                  onChange={(e) => changeProfile(e.target.value)}
+                  disabled={activeProfiles.length === 0}
+                >
+                  {activeProfiles.length === 0 && (
+                    <option value="">No profiles yet: create one under Resume Types</option>
+                  )}
+                  {activeProfiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="company_name">Company name</Label>
@@ -239,14 +291,17 @@ export function ResumeSelector() {
 
             <div className="flex flex-col gap-2">
               <Label>Resume to use</Label>
-              <Select value={selectedProfileId} onValueChange={(v) => setSelectedProfileId(v ?? "")}>
+              <Select
+                value={selectedResumeTypeId}
+                onValueChange={(v) => setSelectedResumeTypeId(v ?? "")}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Pre-filled with the best fit after Analyze" />
                 </SelectTrigger>
                 <SelectContent>
-                  {selectableProfiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
+                  {usableResumeTypes.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -278,7 +333,7 @@ export function ResumeSelector() {
           <AnalyzingPanel />
         ) : analyzeOutput ? (
           <div className="flex flex-col gap-2">
-            <ResultCard result={analyzeOutput.result} profileName={profileName} />
+            <ResultCard result={analyzeOutput.result} resumeName={resumeName} />
             <p className="text-xs text-muted-foreground">
               Not saved yet: click <span className="font-medium">Save</span> to add it to History
               below.

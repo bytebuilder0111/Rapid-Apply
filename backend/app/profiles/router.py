@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -8,7 +8,6 @@ from app.deps import get_current_user, require_roles, scope_client_id
 from app.errors import AppError
 from app.models import Role, User
 from app.profiles import service
-from app.profiles.resume_text import MAX_UPLOAD_BYTES
 from app.profiles.schemas import ProfileCreate, ProfileOut, ProfileUpdate
 
 router = APIRouter()
@@ -72,22 +71,6 @@ async def update_profile(
     else:
         raise AppError("forbidden", "Not allowed", 403)
     profile = await service.update_profile(db, profile, payload)
-    return ProfileOut.model_validate(profile)
-
-
-@router.post("/{profile_id}/resume", response_model=ProfileOut)
-async def upload_resume(
-    profile_id: UUID,
-    file: UploadFile = File(...),
-    user: User = Depends(require_roles(Role.CLIENT)),
-    db: AsyncSession = Depends(get_db),
-) -> ProfileOut:
-    profile = await service.get_profile_scoped(db, profile_id, client_id=user.id)
-    # Read one byte past the limit so an oversized upload is rejected without buffering it all.
-    data = await file.read(MAX_UPLOAD_BYTES + 1)
-    profile = await service.upload_resume(
-        db, profile, filename=file.filename or "resume", data=data
-    )
     return ProfileOut.model_validate(profile)
 
 

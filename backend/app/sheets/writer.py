@@ -23,7 +23,7 @@ HEADER_ROW = [
     "Framework",
     "Secondary Skills",
     "Seniority",
-    "Profile Used",
+    "Resume Used",
     "Recorded By",
     "Confidence",
 ]
