@@ -1,3 +1,6 @@
+import logging
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +9,7 @@ from app.ai.service import test_api_key
 from app.config import settings
 from app.db import get_db
 from app.deps import get_current_user, require_roles, scope_client_id
+from app.errors import AppError
 from app.integrations import google_service, service
 from app.integrations.schemas import (
     GoogleAuthorizeUrlOut,
@@ -16,6 +20,7 @@ from app.integrations.schemas import (
 from app.models import Role, User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get(
@@ -67,15 +72,27 @@ async def google_authorize(user: User = Depends(get_current_user)) -> GoogleAuth
 
 @router.get("/google/callback", include_in_schema=False)
 async def google_callback(
-    code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     # Hit directly by Google's redirect, so there's no bearer token here — the signed
-    # `state` (see google_service._sign_state) is what identifies the client.
+    # `state` (see google_service._sign_state) is what identifies the client. Every outcome
+    # redirects back to the app, with a reason code the Integrations page turns into a message.
+    back = f"{settings.frontend_url}/client/integrations"
+    if error or not code or not state:
+        reason = "cancelled" if error in (None, "access_denied") else error
+        return RedirectResponse(f"{back}?google=error&reason={quote(reason)}")
     try:
         await google_service.handle_callback(db, code=code, state=state)
-        return RedirectResponse(f"{settings.frontend_url}/client/integrations?google=connected")
+    except AppError as exc:
+        logger.warning("Google connect failed: %s (%s)", exc.code, exc.message)
+        return RedirectResponse(f"{back}?google=error&reason={quote(exc.code)}")
     except Exception:
-        return RedirectResponse(f"{settings.frontend_url}/client/integrations?google=error")
+        logger.exception("Unexpected error in the Google OAuth callback")
+        return RedirectResponse(f"{back}?google=error&reason=unexpected")
+    return RedirectResponse(f"{back}?google=connected")
 
 
 @router.get(

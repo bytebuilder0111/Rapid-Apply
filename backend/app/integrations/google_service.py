@@ -5,6 +5,8 @@ this module only owns the OAuth handshake and the google_connections row.
 """
 
 import asyncio
+import logging
+import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -13,6 +15,7 @@ from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import id_token as google_id_token
 from google_auth_oauthlib.flow import Flow
+from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +34,13 @@ SCOPES = [
 ]
 
 _STATE_TTL = timedelta(minutes=10)
+
+logger = logging.getLogger(__name__)
+
+# Google may return the granted scopes in a different form or order than requested (and
+# users can untick some). oauthlib treats any difference as an error unless relaxed; the
+# granted set is checked explicitly in handle_callback instead.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 
 def _client_config() -> dict:
@@ -70,30 +80,53 @@ def _verify_state(state: str) -> UUID:
     return UUID(payload["client_id"])
 
 
+def _flow() -> Flow:
+    # No PKCE: the authorize redirect and the callback are separate stateless requests, so
+    # an auto-generated code_verifier from the first would be missing from the second and
+    # Google would reject the code. This is a confidential client (it has a secret), so
+    # PKCE isn't required.
+    return Flow.from_client_config(
+        _client_config(),
+        scopes=SCOPES,
+        redirect_uri=settings.google_redirect_uri,
+        autogenerate_code_verifier=False,
+    )
+
+
 def build_authorize_url(client_id: UUID) -> str:
     _require_configured()
-    flow = Flow.from_client_config(
-        _client_config(), scopes=SCOPES, redirect_uri=settings.google_redirect_uri
-    )
-    authorize_url, _ = flow.authorization_url(
+    authorize_url, _ = _flow().authorization_url(
         access_type="offline",
         prompt="consent",
-        include_granted_scopes="true",
         state=_sign_state(client_id),
     )
     return authorize_url
 
 
-def _fetch_token_sync(code: str) -> tuple[str | None, str]:
-    flow = Flow.from_client_config(
-        _client_config(), scopes=SCOPES, redirect_uri=settings.google_redirect_uri
-    )
+def _fetch_token_sync(code: str) -> tuple[str | None, str, set[str]]:
+    flow = _flow()
     flow.fetch_token(code=code)
     credentials = flow.credentials
     claims = google_id_token.verify_oauth2_token(
-        credentials.id_token, GoogleAuthRequest(), audience=settings.google_client_id
+        credentials.id_token,
+        GoogleAuthRequest(),
+        audience=settings.google_client_id,
+        clock_skew_in_seconds=30,
     )
-    return credentials.refresh_token, claims["email"]
+    scope = flow.oauth2session.token.get("scope") or []
+    granted = set(scope.split() if isinstance(scope, str) else scope)
+    return credentials.refresh_token, claims["email"], granted
+
+
+# Without these the user can't list or write spreadsheets, so connecting is pointless.
+_REQUIRED_SCOPES = {
+    "https://www.googleapis.com/auth/spreadsheets": (
+        "See, edit, create, and delete your Google Sheets"
+    ),
+    "https://www.googleapis.com/auth/drive.metadata.readonly": (
+        "See information about your Google Drive files"
+    ),
+}
 
 
 async def handle_callback(db: AsyncSession, *, code: str, state: str) -> UUID:
@@ -102,11 +135,22 @@ async def handle_callback(db: AsyncSession, *, code: str, state: str) -> UUID:
     _require_configured()
     client_id = _verify_state(state)
     try:
-        refresh_token, email = await asyncio.to_thread(_fetch_token_sync, code)
-    except GoogleAuthError as exc:
+        refresh_token, email, granted = await asyncio.to_thread(_fetch_token_sync, code)
+    except (OAuth2Error, GoogleAuthError, ValueError) as exc:
+        logger.warning("Google token exchange failed: %r", exc)
         raise AppError(
-            "google_auth_failed", "Google sign-in failed. Please try again.", 400
+            "google_auth_failed", "Google sign-in failed. Please try connecting again.", 400
         ) from exc
+
+    missing = [label for scope, label in _REQUIRED_SCOPES.items() if scope not in granted]
+    if missing:
+        raise AppError(
+            "google_missing_permissions",
+            "Google connected, but these permissions were unticked: "
+            + "; ".join(missing)
+            + ". Connect again and leave every box ticked.",
+            400,
+        )
 
     if refresh_token is None:
         # Google only issues a refresh token on first consent for a given client/user pair.

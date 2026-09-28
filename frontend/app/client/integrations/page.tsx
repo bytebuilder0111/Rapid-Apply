@@ -26,6 +26,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api";
 import { integrationsApi } from "@/lib/integrations-api";
 
+const GOOGLE_ERRORS: Record<string, string> = {
+  cancelled: "Google connection was cancelled.",
+  google_missing_permissions:
+    "Google connected without all permissions. Click Connect Google again and leave every box ticked.",
+  google_no_refresh_token:
+    "Google didn't grant ongoing access. Remove Rapid-Apply at myaccount.google.com/permissions, then connect again.",
+  google_auth_failed: "Google sign-in failed. Please click Connect Google again.",
+  invalid_state: "The Google sign-in link expired. Please click Connect Google again.",
+  google_not_configured: "Google sign-in isn't set up on the server yet.",
+  unexpected: "Something went wrong connecting Google. Check the backend terminal for details.",
+};
+
 function GoogleIntegrationCard() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = useQuery({
@@ -38,7 +50,12 @@ function GoogleIntegrationCard() {
     const result = params.get("google");
     if (!result) return;
     if (result === "connected") toast.success("Google account connected");
-    if (result === "error") toast.error("Couldn't connect Google account");
+    if (result === "error") {
+      const reason = params.get("reason") ?? "";
+      toast.error(GOOGLE_ERRORS[reason] ?? `Couldn't connect Google (${reason || "unknown error"}).`, {
+        duration: 15000,
+      });
+    }
     window.history.replaceState(null, "", window.location.pathname);
     queryClient.invalidateQueries({ queryKey: ["integrations", "google"] });
     // Runs once on mount to consume the OAuth redirect's query params.
