@@ -47,12 +47,12 @@ const createSchema = z.object({
     .min(2, "Username must be at least 2 characters.")
     .max(50, "Username must be at most 50 characters.")
     .regex(/^[A-Za-z0-9._-]+$/, "Use letters, numbers, dots, dashes or underscores (no spaces)."),
-  password: z.string().min(8, "At least 8 characters."),
+  password: z.string().min(1, "Enter a password."),
   assigned_profile_id: z.string().min(1, "Pick a profile."),
 });
 type CreateValues = z.infer<typeof createSchema>;
 
-const passwordSchema = z.object({ new_password: z.string().min(8, "At least 8 characters.") });
+const passwordSchema = z.object({ new_password: z.string().min(1, "Enter a password.") });
 type PasswordValues = z.infer<typeof passwordSchema>;
 
 function errorMessage(error: unknown, fallback: string): string {

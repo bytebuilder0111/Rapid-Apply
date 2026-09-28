@@ -20,7 +20,7 @@ class ClientOut(BaseModel):
 class ClientCreate(BaseModel):
     username: Username
     name: str = Field(min_length=1, max_length=255)
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=1)
 
 
 class ClientUpdate(BaseModel):
@@ -45,7 +45,7 @@ class BidderCreate(BaseModel):
     username."""
 
     username: Username
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=1)
     assigned_profile_id: UUID
     name: str | None = Field(default=None, max_length=255)
 
@@ -57,7 +57,7 @@ class BidderUpdate(BaseModel):
 
 
 class SetPasswordRequest(BaseModel):
-    new_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=1)
 
 
 class RoleCounts(BaseModel):
