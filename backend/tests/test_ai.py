@@ -115,21 +115,27 @@ async def test_analyze_retries_when_a_resume_was_skipped() -> None:
             api_key="k", model="gpt-4o-mini", job_description=PYTHON_JD, resumes=PROFILES
         )
     assert outcome.result.recommended_resume_type_id == "p1"
-    assert outcome.result.confidence == 0.9
+    # 70% stack coverage (all of it here) + 30% the model's fit.
+    assert outcome.result.confidence == round(0.7 * 1.0 + 0.3 * 0.9, 2)
     assert outcome.result.jd_summary == "Senior backend role building Python APIs."
     assert fake.return_value.chat.completions.parse.await_count == 2
 
 
 async def test_analyze_allows_dismatched_jd() -> None:
-    all_other_roles = _response(
+    rust_job = _response(
+        jd_core_stack=["Rust"],
+        main_backend_skill="Rust",
         resume_checks=[
-            _check("p1", same_role=False, fit=0.2),
+            _check("p1", same_role=True, fit=0.2),
             _check("p2", same_role=False, fit=0.1),
-        ]
+        ],
     )
-    with patch("app.ai.service.AsyncOpenAI", _fake_openai(all_other_roles)):
+    with patch("app.ai.service.AsyncOpenAI", _fake_openai(rust_job)):
         outcome = await analyze_job_description(
-            api_key="k", model="gpt-4o-mini", job_description=PYTHON_JD, resumes=PROFILES
+            api_key="k",
+            model="gpt-4o-mini",
+            job_description="Backend engineer building Rust services.",
+            resumes=PROFILES,
         )
     assert outcome.result.recommended_resume_type_id is None
 

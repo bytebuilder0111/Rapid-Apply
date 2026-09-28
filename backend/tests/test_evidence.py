@@ -93,17 +93,18 @@ def test_code_finds_the_match_the_model_can_only_assess() -> None:
     )
     out = decide_match(response, jd, PROFILES)
     assert out.recommended_resume_type_id == "ios"
-    assert out.confidence == 0.85
-    assert out.reasoning == "ios note. Matches on: Swift."
+    assert out.reasoning == (
+        "iOS Mobile has Swift from the stack this JD names; missing Kotlin, Java."
+    )
 
 
 def test_same_language_on_a_different_platform_is_declined() -> None:
-    # Java Backend has "Java", but the model judged it a different role from Android.
+    # Java Backend has "Java" (half the stack), but the model judged it a different role.
     jd = "Android engineer: Kotlin and Java for our mobile app."
     response = _response(role_type="mobile", core=["Kotlin", "Java"], checks=_all_checks())
     out = decide_match(response, jd, PROFILES)
     assert out.recommended_resume_type_id is None
-    assert "Java Backend shares part of the named stack" in out.reasoning
+    assert "Java Backend has part of the named stack" in out.reasoning
     assert "different kind of role than this mobile job" in out.reasoning
 
 
@@ -117,23 +118,77 @@ def test_no_resume_has_the_named_stack() -> None:
     assert out.reasoning == "None of your resumes include the stack this JD names (Python, Django)."
 
 
-def test_weak_fit_is_declined_even_with_stack_and_role() -> None:
-    jd = "Node.js engineer for embedded firmware tooling."
-    response = _response(core=["Node.js"], checks=_all_checks(node=_check("node", fit=0.3)))
-    out = decide_match(response, jd, PROFILES)
-    assert out.recommended_resume_type_id is None
-    assert out.reasoning.startswith("The closest resume, Node, fits only 30%.")
+FULLSTACK_PROFILES = [
+    {
+        "id": "python",
+        "name": "Python",
+        "summary": "Full-stack engineer, Python/Django APIs with React front ends.",
+        "skills": ["Python", "TypeScript", "Django", "React"],
+    },
+    {
+        "id": "java",
+        "name": "Java",
+        "summary": "Senior engineer, Java and Spring Boot with React.",
+        "skills": ["Java", "Spring Boot", "React"],
+    },
+    {
+        "id": "node",
+        "name": "Node",
+        "summary": "Node.js and TypeScript engineer with React.",
+        "skills": ["Node.js", "TypeScript", "React"],
+    },
+]
+ARCHERA_JD = (
+    "Senior Fullstack Software Engineer. React and TypeScript on the frontend, and Python "
+    "API/service on the backend."
+)
 
 
-def test_highest_fit_candidate_wins() -> None:
-    jd = "Backend: Java with Spring Boot, or Node.js with TypeScript."
-    response = _response(
-        core=["Java", "Spring Boot", "Node.js", "TypeScript"],
-        checks=_all_checks(node=_check("node", fit=0.7), java=_check("java", fit=0.9)),
+def _fullstack(**checks: ResumeCheck) -> AnalysisResponse:
+    return _response(
+        role_type="fullstack",
+        core=["React", "TypeScript", "Python"],
+        checks=[
+            checks.get(p["id"], _check(p["id"], same_role=False, fit=0.1))
+            for p in FULLSTACK_PROFILES
+        ],
     )
-    out = decide_match(response, jd, PROFILES)
-    assert out.recommended_resume_type_id == "java"
-    assert out.reasoning.endswith("Matches on: Java, Spring Boot.")
+
+
+def test_shared_framework_without_the_jds_language_never_wins() -> None:
+    # The Archera case: the model rated Java well and flip-flopped on Python's role, but Java
+    # only shares React while Python has everything the JD names.
+    out = decide_match(
+        _fullstack(java=_check("java", fit=0.9), python=_check("python", same_role=False, fit=0.5)),
+        ARCHERA_JD,
+        FULLSTACK_PROFILES,
+    )
+    assert out.recommended_resume_type_id == "python"
+    assert out.reasoning == (
+        "Python has React, TypeScript, Python from the stack this JD names (all of it)."
+    )
+    assert out.confidence == round(0.7 * 1.0 + 0.3 * 0.5, 2)
+
+
+def test_most_of_the_named_stack_wins_over_the_models_fit() -> None:
+    # Node has TypeScript + React (60%); Python has all of it despite a lower model fit.
+    out = decide_match(
+        _fullstack(node=_check("node", fit=0.9), python=_check("python", fit=0.4)),
+        ARCHERA_JD,
+        FULLSTACK_PROFILES,
+    )
+    assert out.recommended_resume_type_id == "python"
+
+
+def test_only_a_framework_in_common_is_declined() -> None:
+    profiles = [p for p in FULLSTACK_PROFILES if p["id"] == "java"]
+    out = decide_match(
+        _response(core=["React", "Python"], checks=[_check("java", fit=0.9)]),
+        "React front end and Python services.",
+        profiles,
+    )
+    assert out.recommended_resume_type_id is None
+    assert out.reasoning.startswith("No resume has the language this JD needs (Python).")
 
 
 def test_java_does_not_match_javascript() -> None:
@@ -207,3 +262,35 @@ def test_hybrid_onsite_relocation_and_non_us_remote_are_skipped() -> None:
         assert out.reasoning == f"Skipped: {expected}"
         assert out.recommended_resume_type_id is None
         assert out.confidence == 0.0
+
+
+def test_version_numbers_do_not_block_a_match() -> None:
+    jd = "Senior engineer: Java 17 and Spring Boot 3 microservices."
+    response = _response(core=["Java 17", "Spring Boot 3"], checks=_all_checks())
+    out = decide_match(response, jd, PROFILES)
+    assert out.recommended_resume_type_id == "java"
+
+
+def test_a_framework_implies_its_language() -> None:
+    profiles = [
+        {"id": "dj", "name": "Django", "summary": "Django REST APIs.", "skills": ["Django"]}
+    ]
+    response = _response(core=["Python 3", "Django"], checks=[_check("dj", fit=0.8)])
+    out = decide_match(response, "Python 3 and Django backend engineer.", profiles)
+    assert out.recommended_resume_type_id == "dj"
+
+
+def test_languages_are_found_even_if_the_model_misses_them() -> None:
+    jd = "Senior Mobile Architect: native iOS and Android using Swift, Kotlin, Java."
+    response = _response(
+        role_type="mobile", core=[], checks=_all_checks(ios=_check("ios", fit=0.85))
+    )
+    out = decide_match(response, jd, PROFILES)
+    assert out.jd_core_stack == ["Java", "Kotlin", "Swift"]
+    assert out.recommended_resume_type_id == "ios"
+
+
+def test_fallback_keeps_a_stackless_jd_empty() -> None:
+    jd = STACKLESS_JD + " We go live weekly and our network is on .NET-free infra."
+    out = decide_match(_response(core=[], checks=_all_checks()), jd, PROFILES)
+    assert out.jd_core_stack == []

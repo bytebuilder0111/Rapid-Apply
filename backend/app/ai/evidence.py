@@ -1,9 +1,13 @@
 """Turns the model's per-resume checks into the final match, using evidence from the texts.
 
-The model assesses every resume but never picks the winner. A resume can win only if:
-- it contains a core technology the JD explicitly names (checked here against both the JD
-  text and the resume's summary/skills, so a technology the model invents can't count), and
-- the model judged it the same kind of role as the job.
+The model assesses every resume but never picks the winner; its per-resume checks proved
+unreliable (e.g. claiming a Java resume "matches Python"). A resume can win only if, measured
+from the JD text and the resume's own summary/skills:
+- it has at least one of the languages the JD names (a shared framework like React isn't
+  enough when the JD also names Python),
+- the model judged it the same kind of role, unless it covers 75%+ of the stack anyway.
+Among those, the resume with the most of the named stack wins (languages count double); JDs
+often list alternatives ("Swift, Kotlin or Java"), so no minimum share is required.
 Otherwise the result is a "Dismatched JD" with a specific reason."""
 
 import re
@@ -21,8 +25,16 @@ _ALIASES = {
     "k8s": "kubernetes",
 }
 _EMPTY_VALUES = {"", "null", "none", "n/a", "na", "not specified", "unspecified"}
-# A resume that shares the stack and role still has to be judged at least this good a fit.
-MIN_FIT = 0.5
+# Share of the JD's named stack (languages count double) above which the model's "different
+# role" judgment is overruled: the model's per-resume checks are too unreliable to veto a
+# resume that has nearly everything the JD names.
+STRONG_COVERAGE = 0.75
+# Tokens that make a stack term a programming language (".NET" counts, via C#/.NET resumes).
+_LANGUAGE_TOKENS = {
+    "python", "java", "go", "c#", "c++", "php", "ruby", "javascript", "typescript", "node",
+    "kotlin", "swift", "objective", "scala", "rust", "elixir", "clojure", "dart", "perl",
+    "haskell", "erlang", "net", "zig",
+}  # fmt: skip
 # Tools, platforms and datastores that nearly every resume lists. They never count as a
 # JD's core stack, so a match can't rest on incidental overlap like "CI/CD" or "AWS".
 _GENERIC_TOKENS = {
@@ -41,13 +53,38 @@ def _tokens(text: str) -> set[str]:
 
 def _named_in(term: str, text_tokens: set[str]) -> bool:
     """True if every token of `term` appears in the text: "Spring Boot" needs both words,
-    and "Java" doesn't match "JavaScript" because tokens are compared whole."""
+    and "Java" doesn't match "JavaScript" because tokens are compared whole. Version numbers
+    are ignored."""
     term_tokens = _tokens(term)
-    return bool(term_tokens) and term_tokens <= text_tokens
+    # Version numbers don't have to match: "Java 17" is named by a resume that says "Java".
+    words = {t for t in term_tokens if not t.isdigit()} or term_tokens
+    return bool(words) and words <= text_tokens
 
 
 def _is_generic(term: str) -> bool:
     return _tokens(term) <= _GENERIC_TOKENS
+
+
+# A resume that names a framework also has its language, even if it never says so
+# ("Django REST Framework APIs" is Python work).
+_IMPLIED_LANGUAGE = {
+    "django": "python", "flask": "python", "fastapi": "python", "spring": "java",
+    "rails": "ruby", "laravel": "php", "symfony": "php", "asp": "c#", "nestjs": "node",
+    "express": "node", "swiftui": "swift", "ktor": "kotlin", "phoenix": "elixir",
+}  # fmt: skip
+
+
+def _resume_tokens(resume: dict) -> set[str]:
+    tokens = _tokens(" ".join(resume["skills"]) + " " + resume["summary"])
+    return tokens | {_IMPLIED_LANGUAGE[t] for t in tokens if t in _IMPLIED_LANGUAGE}
+
+
+def _is_language(term: str) -> bool:
+    return bool(_tokens(term) & _LANGUAGE_TOKENS)
+
+
+def _weight(term: str) -> int:
+    return 2 if _is_language(term) else 1
 
 
 def _clean(value: str | None) -> str | None:
@@ -56,14 +93,27 @@ def _clean(value: str | None) -> str | None:
     return value.strip()
 
 
+# Languages the code can spot in a JD on its own, when the model's extraction comes back
+# empty. Only unambiguous words: "Go" and ".NET" also occur in ordinary English text.
+_DETECTABLE_LANGUAGES = {
+    "python": "Python", "java": "Java", "javascript": "JavaScript", "typescript": "TypeScript",
+    "kotlin": "Kotlin", "swift": "Swift", "php": "PHP", "ruby": "Ruby", "rust": "Rust",
+    "scala": "Scala", "elixir": "Elixir", "c#": "C#", "c++": "C++", "golang": "Go",
+}  # fmt: skip
+
+
 def verified_core_stack(claimed: list[str], job_description: str) -> list[str]:
-    """The claimed core technologies that really appear in the JD and aren't generic tools."""
+    """The claimed core technologies that really appear in the JD and aren't generic tools.
+    If the model named none, falls back to languages the JD text itself names."""
     jd_tokens = _tokens(job_description)
     verified: list[str] = []
     for term in (t.strip() for t in claimed):
         seen = term.lower() in {v.lower() for v in verified}
         if _named_in(term, jd_tokens) and not _is_generic(term) and not seen:
             verified.append(term)
+    if not verified:
+        raw = set(re.findall(r"[a-z0-9+#]+", job_description.lower()))
+        verified = [name for word, name in _DETECTABLE_LANGUAGES.items() if word in raw]
     return verified
 
 
@@ -85,10 +135,10 @@ def skip_reason(response: AnalysisResponse) -> str | None:
         return f"Hybrid role, not fully remote{detail}."
     if response.work_arrangement == "onsite":
         return f"On-site role, not remote{detail}."
-    if response.relocation_required:
-        return f"Requires relocation{detail}."
     if response.work_arrangement == "remote" and response.remote_location == "non_us":
         return f"Remote only outside the US{detail}."
+    if response.relocation_required:
+        return f"Requires relocation{detail}."
     return None
 
 
@@ -106,25 +156,36 @@ def decide_match(
         main_skill = ", ".join(core[:2]) or "Not specified"
 
     checks = {c.resume_id: c for c in response.resume_checks}
-    # Resumes that really contain a named core technology, with what they match on.
-    with_stack = []
+    languages = [t for t in core if _is_language(t)]
+    total = sum(_weight(t) for t in core)
+
+    # Everything below is measured from the resume text itself; the model's per-resume check
+    # only breaks ties and vetoes a different kind of role when coverage is partial.
+    scored = []  # (resume, overlap, coverage, has_language)
     for p in resumes:
-        resume_tokens = _tokens(" ".join(p["skills"]) + " " + p["summary"])
+        resume_tokens = _resume_tokens(p)
         overlap = [t for t in core if _named_in(t, resume_tokens)]
         if overlap:
-            with_stack.append((p, overlap))
-    same_role = [
-        (p, overlap, checks[p["id"]])
-        for p, overlap in with_stack
-        if p["id"] in checks and checks[p["id"]].same_role
-    ]
-    candidates = [c for c in same_role if c[2].fit >= MIN_FIT]
+            coverage = sum(_weight(t) for t in overlap) / total
+            has_language = not languages or any(t in overlap for t in languages)
+            scored.append((p, overlap, coverage, has_language))
+    with_language = [s for s in scored if s[3]]
+
+    def fit(p: dict) -> float:
+        return checks[p["id"]].fit if p["id"] in checks else 0.0
+
+    def role_ok(p: dict, coverage: float) -> bool:
+        same = p["id"] in checks and checks[p["id"]].same_role
+        return same or coverage >= STRONG_COVERAGE
+
+    candidates = [s for s in with_language if role_ok(s[0], s[2])]
 
     def best_of(options):
-        return max(options, key=lambda c: (c[2].fit, len(c[1])))
+        return max(options, key=lambda s: (s[2], fit(s[0])))
 
     recommended, confidence = None, 0.0
     skip = skip_reason(response)
+    stack = ", ".join(core)
     if skip:
         reasoning = f"Skipped: {skip}"
     elif not core:
@@ -132,25 +193,29 @@ def decide_match(
             "This JD doesn't name a specific programming language or framework, so none of "
             "your resumes can be confirmed as a match."
         )
-    elif not with_stack:
-        reasoning = f"None of your resumes include the stack this JD names ({', '.join(core)})."
-    elif not same_role:
-        verb = "shares" if len(with_stack) == 1 else "share"
+    elif not scored:
+        reasoning = f"None of your resumes include the stack this JD names ({stack})."
+    elif not with_language:
+        best, overlap, _, _ = best_of(scored)
         reasoning = (
-            f"{_names([p for p, _ in with_stack])} {verb} part of the named stack "
-            f"({', '.join(core)}), but for a different kind of role than this "
-            f"{response.role_type} job."
+            f"No resume has the language this JD needs ({', '.join(languages)}). The closest, "
+            f"{best['name']}, only shares {', '.join(overlap)}."
         )
     elif not candidates:
-        closest, _, check = best_of(same_role)
+        names = _names([s[0] for s in with_language])
+        verb = "has" if len(with_language) == 1 else "have"
         reasoning = (
-            f"The closest resume, {closest['name']}, fits only {round(check.fit * 100)}%. "
-            f"{check.note}"
+            f"{names} {verb} part of the named stack ({stack}), "
+            f"but for a different kind of role than this {response.role_type} job."
         )
     else:
-        best, overlap, check = best_of(candidates)
-        recommended, confidence = best["id"], check.fit
-        reasoning = f"{check.note} Matches on: {', '.join(overlap)}."
+        best, overlap, coverage, _ = best_of(candidates)
+        recommended = best["id"]
+        confidence = round(0.7 * coverage + 0.3 * fit(best), 2)
+        missing = [t for t in core if t not in overlap]
+        reasoning = f"{best['name']} has {', '.join(overlap)} from the stack this JD names" + (
+            f"; missing {', '.join(missing)}." if missing else " (all of it)."
+        )
 
     return AnalysisResult(
         jd_summary=response.jd_summary,
