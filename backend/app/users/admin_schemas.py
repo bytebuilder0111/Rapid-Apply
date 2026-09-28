@@ -41,11 +41,13 @@ class BidderOut(BaseModel):
 
 
 class BidderCreate(BaseModel):
-    client_id: UUID
+    """The bidder's client is the assigned profile's client; the name defaults to the
+    username."""
+
     username: Username
-    name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=8)
     assigned_profile_id: UUID
+    name: str | None = Field(default=None, max_length=255)
 
 
 class BidderUpdate(BaseModel):

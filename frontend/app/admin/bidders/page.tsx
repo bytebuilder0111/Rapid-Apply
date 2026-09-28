@@ -41,8 +41,6 @@ import { profilesApi } from "@/lib/profiles-api";
 import type { BidderUser, ClientUser } from "@/lib/types";
 
 const createSchema = z.object({
-  client_id: z.string().min(1, "Pick a client."),
-  name: z.string().min(1, "Name is required."),
   username: z
     .string()
     .trim()
@@ -69,21 +67,21 @@ function CreateBidderDialog() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const { data: clients } = useClientOptions();
+  const clientName = (id: string) => clients?.find((c: ClientUser) => c.id === id)?.name;
 
   const {
     control,
     register,
     handleSubmit,
-    watch,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<CreateValues>({ resolver: zodResolver(createSchema) });
 
-  const selectedClientId = watch("client_id");
+  // Every client's profiles; the bidder's client is the chosen profile's client.
   const { data: profiles, isLoading: profilesLoading } = useQuery({
-    queryKey: ["profiles", selectedClientId],
-    queryFn: () => profilesApi.list(selectedClientId),
-    enabled: Boolean(selectedClientId),
+    queryKey: ["profiles", "all"],
+    queryFn: () => profilesApi.list(),
+    enabled: open,
   });
 
   const onSubmit = async (values: CreateValues) => {
@@ -106,35 +104,10 @@ function CreateBidderDialog() {
           <DialogHeader>
             <DialogTitle>New bidder</DialogTitle>
             <DialogDescription>
-              Belongs to one client and is assigned exactly one of that client&apos;s profiles.
+              A bidder works under one profile, and belongs to that profile&apos;s client.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-4">
-            <div className="flex flex-col gap-2">
-              <Label>Client</Label>
-              <Controller
-                control={control}
-                name="client_id"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select a client" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(clients ?? []).map((c: ClientUser) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name} ({c.username})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              {errors.client_id && (
-                <p className="text-sm text-destructive">{errors.client_id.message}</p>
-              )}
-            </div>
-
             <div className="flex flex-col gap-2">
               <Label>Assigned profile</Label>
               <Controller
@@ -144,29 +117,27 @@ function CreateBidderDialog() {
                   <Select
                     value={field.value}
                     onValueChange={field.onChange}
-                    disabled={!selectedClientId || profilesLoading}
+                    disabled={profilesLoading}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue
-                        placeholder={
-                          !selectedClientId ? "Pick a client first" : "Select a profile"
-                        }
-                      />
+                      <SelectValue placeholder="Select a profile" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(profiles ?? []).map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
+                      {(profiles ?? [])
+                        .filter((p) => p.is_active)
+                        .map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                            {clientName(p.client_id) ? ` (${clientName(p.client_id)})` : ""}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 )}
               />
-              {selectedClientId && profiles?.length === 0 && (
+              {profiles?.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  This client has no profiles yet — create one from the client&apos;s Profiles page
-                  first.
+                  No profiles yet. A client creates them under Resume Types.
                 </p>
               )}
               {errors.assigned_profile_id && (
@@ -175,18 +146,13 @@ function CreateBidderDialog() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="name">Name</Label>
-              <Input id="name" {...register("name")} />
-              {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
-            </div>
-            <div className="flex flex-col gap-2">
               <Label htmlFor="username">Username</Label>
               <Input id="username" autoComplete="off" {...register("username")} />
               {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" {...register("password")} />
+              <Input id="password" type="password" autoComplete="new-password" {...register("password")} />
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password.message}</p>
               )}

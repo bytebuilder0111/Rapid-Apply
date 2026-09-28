@@ -164,14 +164,16 @@ async def create_bidder(db: AsyncSession, payload: BidderCreate) -> User:
     if await _username_taken(db, username):
         raise AppError("username_taken", "That username is already taken", 409)
 
-    client = await get_client(db, payload.client_id)
+    profile = await db.get(Profile, payload.assigned_profile_id)
+    if profile is None:
+        raise AppError("invalid_profile", "Profile not found", 400)
+    client = await get_client(db, profile.client_id)
     if client.deleted_at is not None:
         raise AppError("client_deleted", "Cannot add a bidder to a deleted client", 400)
-    await _validate_profile_for_client(db, payload.assigned_profile_id, client.id)
 
     bidder = User(
         username=username,
-        name=payload.name,
+        name=(payload.name or "").strip() or username,
         password_hash=hash_password(payload.password),
         role=Role.BIDDER,
         is_active=True,

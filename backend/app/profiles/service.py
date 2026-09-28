@@ -8,10 +8,12 @@ from app.profiles.models import Profile
 from app.profiles.schemas import ProfileCreate, ProfileUpdate
 
 
-async def list_profiles(db: AsyncSession, *, client_id: UUID) -> list[Profile]:
-    result = await db.execute(
-        select(Profile).where(Profile.client_id == client_id).order_by(Profile.created_at)
-    )
+async def list_profiles(db: AsyncSession, *, client_id: UUID | None) -> list[Profile]:
+    """One client's profiles, or every client's when client_id is None (admin only)."""
+    stmt = select(Profile).order_by(Profile.created_at)
+    if client_id is not None:
+        stmt = stmt.where(Profile.client_id == client_id)
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 

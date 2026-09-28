@@ -71,13 +71,21 @@ async def test_bidder_sees_only_their_clients_profiles(
     assert bidder_create.status_code == 403
 
 
-async def test_admin_requires_client_id_to_list_profiles(
+async def test_admin_without_client_id_lists_every_clients_profiles(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     await create_user(db_session, username="admin-profiles", role=Role.ADMIN)
+    for name in ("profowner1", "profowner2"):
+        await create_user(db_session, username=name, role=Role.CLIENT)
+        await client.post(
+            "/api/v1/profiles",
+            headers=await login_headers(client, username=name),
+            json={"name": f"{name} person"},
+        )
     headers = await login_headers(client, username="admin-profiles")
 
     resp = await client.get("/api/v1/profiles", headers=headers)
 
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "client_id_required"
+    assert resp.status_code == 200
+    names = {p["name"] for p in resp.json()}
+    assert {"profowner1 person", "profowner2 person"} <= names

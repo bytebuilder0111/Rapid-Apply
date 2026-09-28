@@ -49,7 +49,6 @@ async def test_admin_client_and_bidder_crud_flow(
         "/api/v1/admin/bidders",
         headers=headers,
         json={
-            "client_id": client_id,
             "username": "bidder1",
             "name": "Bidder One",
             "password": "s3cret-pass",
@@ -84,36 +83,31 @@ async def test_admin_client_and_bidder_crud_flow(
     assert login_after_deactivate.status_code == 401
 
 
-async def test_bidder_requires_profile_owned_by_same_client(
+async def test_bidder_client_comes_from_profile_and_name_defaults(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     headers = await _admin_headers(client, db_session, "admin2")
-
-    client_a = await create_user(db_session, username="clienta", role=Role.CLIENT)
-    await create_user(db_session, username="clientb", role=Role.CLIENT)
-
+    client_b = await create_user(db_session, username="clientb", role=Role.CLIENT)
     profile_resp = await client.post(
         "/api/v1/profiles",
         headers=await login_headers(client, username="clientb"),
         json={"name": "Node/NestJS"},
     )
     assert profile_resp.status_code == 201
-    other_clients_profile_id = profile_resp.json()["id"]
 
     resp = await client.post(
         "/api/v1/admin/bidders",
         headers=headers,
         json={
-            "client_id": str(client_a.id),
-            "username": "crossbidder",
-            "name": "Cross Bidder",
+            "username": "onlyprofile",
             "password": "s3cret-pass",
-            "assigned_profile_id": other_clients_profile_id,
+            "assigned_profile_id": profile_resp.json()["id"],
         },
     )
 
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "invalid_profile"
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["client_id"] == str(client_b.id)
+    assert resp.json()["name"] == "onlyprofile"
 
 
 async def test_soft_deleting_client_deactivates_its_bidders(
@@ -132,7 +126,6 @@ async def test_soft_deleting_client_deactivates_its_bidders(
         "/api/v1/admin/bidders",
         headers=headers,
         json={
-            "client_id": str(client_user.id),
             "username": "bidderc",
             "name": "Bidder C",
             "password": "s3cret-pass",

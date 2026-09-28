@@ -3,12 +3,12 @@ import type { BidderUser, ClientUser, DashboardCounts } from "@/lib/types";
 
 export type ClientCreateInput = { username: string; name: string; password: string };
 export type ClientUpdateInput = { username?: string; name?: string };
+/** The client is taken from the assigned profile; the name defaults to the username. */
 export type BidderCreateInput = {
-  client_id: string;
   username: string;
-  name: string;
   password: string;
   assigned_profile_id: string;
+  name?: string;
 };
 export type BidderUpdateInput = { username?: string; name?: string; assigned_profile_id?: string };
 

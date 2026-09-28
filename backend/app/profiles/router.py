@@ -13,12 +13,11 @@ from app.profiles.schemas import ProfileCreate, ProfileOut, ProfileUpdate
 router = APIRouter()
 
 
-def _resolve_scope(user: User, requested_client_id: UUID | None) -> UUID:
-    """Which client's profiles this request may touch. Only ADMIN may pass client_id."""
+def _resolve_scope(user: User, requested_client_id: UUID | None) -> UUID | None:
+    """Which client's profiles this request may touch. Only ADMIN may pass client_id; an
+    admin without one gets every client's profiles (None)."""
     own_scope = scope_client_id(user)
     if user.role == Role.ADMIN:
-        if requested_client_id is None:
-            raise AppError("client_id_required", "client_id is required for admin requests", 400)
         return requested_client_id
     return own_scope  # CLIENT -> their own id; BIDDER -> their client's id
 
