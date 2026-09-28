@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import analyze_job_description
 from app.analysis.duplicates import Entry, find_duplicate
-from app.analysis.models import Analysis
+from app.analysis.models import Analysis, JobHistory
 from app.analysis.schemas import AnalysisOut, AnalyzeRequest, SaveAnalysisRequest
 from app.errors import AppError
 from app.integrations.service import get_decrypted_key_for_client, get_settings_row
@@ -57,7 +57,8 @@ async def _resumes_context(db: AsyncSession, profile_id: UUID) -> list[dict]:
 async def _find_duplicate(
     db: AsyncSession, *, user: User, client_id: UUID, profile: Profile, payload
 ) -> str | None:
-    """Checks the job against this profile's saved analyses, then its bid sheet."""
+    """Checks the job against this profile's saved analyses, imported history, then its
+    bid sheet."""
     rows = await db.execute(
         select(
             Analysis.company_name, Analysis.position_name, Analysis.job_link, Analysis.created_at
@@ -71,6 +72,25 @@ async def _find_duplicate(
             where=f"saved for {profile.name} on {created:%Y-%m-%d}",
         )
         for company, position, job_link, created in rows.all()
+    ]
+    history = await db.execute(
+        select(
+            JobHistory.company_name,
+            JobHistory.position_name,
+            JobHistory.job_link,
+            JobHistory.applied_on,
+            JobHistory.source,
+        ).where(JobHistory.client_id == client_id, JobHistory.profile_id == profile.id)
+    )
+    entries += [
+        Entry(
+            company=company,
+            position=position,
+            job_link=job_link or "",
+            where=f"{profile.name}'s history, {source}"
+            + (f", applied {applied:%Y-%m-%d}" if applied else ""),
+        )
+        for company, position, job_link, applied, source in history.all()
     ]
     entries += await recorded_jobs(db, client_id=client_id, profile_id=profile.id, user=user)
     return find_duplicate(

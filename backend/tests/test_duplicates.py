@@ -48,3 +48,24 @@ def test_a_different_query_id_is_a_different_job() -> None:
     assert (
         find_duplicate(sheet, company="C", position="D", job_link="https://x.com/job?id=6") is None
     )
+
+
+def test_link_copies_with_layout_or_tracking_params_match() -> None:
+    assert normalize_link(
+        "https://careers-x.icims.com/jobs/12/job?jr_id=abc&mobile=false&width=1296&height=500"
+    ) == normalize_link("https://careers-x.icims.com/jobs/12/job?width=768")
+
+
+def test_greenhouse_embed_link_matches_direct_link() -> None:
+    embed = "https://job-boards.greenhouse.io/embed/job_app?for=evio&jr_id=6a9b&token=4731447005"
+    assert normalize_link(embed) == normalize_link(
+        "https://job-boards.greenhouse.io/evio/jobs/4731447005"
+    )
+
+
+def test_company_punctuation_and_possessive_are_ignored() -> None:
+    sheet = [Entry("Samsara", "Senior Software Engineer II", "", "row 2")]
+    reason = find_duplicate(
+        sheet, company="Samsara’s", position="Senior Software Engineer II", job_link="https://n.io"
+    )
+    assert reason is not None
