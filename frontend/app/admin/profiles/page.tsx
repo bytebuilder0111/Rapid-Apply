@@ -138,7 +138,11 @@ export default function AdminProfilesPage() {
       </p>
 
       <div className="mt-4 max-w-xs">
-        <Select value={clientId} onValueChange={(value) => setClientId(value ?? "")}>
+        <Select
+          value={clientId}
+          onValueChange={(value) => setClientId(value ?? "")}
+          items={Object.fromEntries((clients ?? []).map((c) => [c.id, `${c.name} (${c.username})`]))}
+        >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Select a client" />
           </SelectTrigger>

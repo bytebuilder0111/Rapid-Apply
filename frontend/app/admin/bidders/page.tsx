@@ -68,6 +68,8 @@ function CreateBidderDialog() {
   const queryClient = useQueryClient();
   const { data: clients } = useClientOptions();
   const clientName = (id: string) => clients?.find((c: ClientUser) => c.id === id)?.name;
+  const profileLabel = (p: { name: string; client_id: string }) =>
+    clientName(p.client_id) ? `${p.name} (${clientName(p.client_id)})` : p.name;
 
   const {
     control,
@@ -117,6 +119,7 @@ function CreateBidderDialog() {
                   <Select
                     value={field.value ?? null}
                     onValueChange={field.onChange}
+                    items={Object.fromEntries((profiles ?? []).map((p) => [p.id, profileLabel(p)]))}
                     disabled={profilesLoading}
                   >
                     <SelectTrigger className="w-full">
@@ -127,8 +130,7 @@ function CreateBidderDialog() {
                         .filter((p) => p.is_active)
                         .map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.name}
-                            {clientName(p.client_id) ? ` (${clientName(p.client_id)})` : ""}
+                            {profileLabel(p)}
                           </SelectItem>
                         ))}
                     </SelectContent>
