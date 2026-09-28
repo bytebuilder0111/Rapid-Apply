@@ -126,5 +126,20 @@
   }
   html {
     @apply font-sans;
+    /* Lets the browser draw native controls (e.g. a <select>'s open option list) in the
+       matching theme instead of always light. */
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  /* Browsers that ignore color-scheme for the option list still get readable theme colors. */
+  select option,
+  select optgroup {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+  }
+  select option:disabled {
+    color: var(--muted-foreground);
   }
 }
