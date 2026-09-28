@@ -9,24 +9,24 @@ from .conftest import create_user as _create_user
 
 
 async def test_login_success(client: AsyncClient, db_session: AsyncSession) -> None:
-    await _create_user(db_session, email="client1@example.com")
+    await _create_user(db_session, username="client1")
 
     response = await client.post(
-        "/api/v1/auth/login", json={"email": "client1@example.com", "password": "s3cret-pass"}
+        "/api/v1/auth/login", json={"username": "client1", "password": "s3cret-pass"}
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["access_token"]
-    assert body["user"]["email"] == "client1@example.com"
+    assert body["user"]["username"] == "client1"
     assert "refresh_token" in response.cookies
 
 
 async def test_login_invalid_password(client: AsyncClient, db_session: AsyncSession) -> None:
-    await _create_user(db_session, email="client2@example.com")
+    await _create_user(db_session, username="client2")
 
     response = await client.post(
-        "/api/v1/auth/login", json={"email": "client2@example.com", "password": "wrong"}
+        "/api/v1/auth/login", json={"username": "client2", "password": "wrong"}
     )
 
     assert response.status_code == 401
@@ -34,10 +34,10 @@ async def test_login_invalid_password(client: AsyncClient, db_session: AsyncSess
 
 
 async def test_deactivated_user_cannot_login(client: AsyncClient, db_session: AsyncSession) -> None:
-    await _create_user(db_session, email="client3@example.com", is_active=False)
+    await _create_user(db_session, username="client3", is_active=False)
 
     response = await client.post(
-        "/api/v1/auth/login", json={"email": "client3@example.com", "password": "s3cret-pass"}
+        "/api/v1/auth/login", json={"username": "client3", "password": "s3cret-pass"}
     )
 
     assert response.status_code == 401
@@ -49,9 +49,9 @@ async def test_me_requires_valid_token(client: AsyncClient) -> None:
 
 
 async def test_me_returns_current_user(client: AsyncClient, db_session: AsyncSession) -> None:
-    await _create_user(db_session, email="client4@example.com")
+    await _create_user(db_session, username="client4")
     login_response = await client.post(
-        "/api/v1/auth/login", json={"email": "client4@example.com", "password": "s3cret-pass"}
+        "/api/v1/auth/login", json={"username": "client4", "password": "s3cret-pass"}
     )
     access_token = login_response.json()["access_token"]
 
@@ -60,13 +60,13 @@ async def test_me_returns_current_user(client: AsyncClient, db_session: AsyncSes
     )
 
     assert response.status_code == 200
-    assert response.json()["email"] == "client4@example.com"
+    assert response.json()["username"] == "client4"
 
 
 async def test_refresh_rotates_token(client: AsyncClient, db_session: AsyncSession) -> None:
-    await _create_user(db_session, email="client5@example.com")
+    await _create_user(db_session, username="client5")
     login_response = await client.post(
-        "/api/v1/auth/login", json={"email": "client5@example.com", "password": "s3cret-pass"}
+        "/api/v1/auth/login", json={"username": "client5", "password": "s3cret-pass"}
     )
     old_cookie = login_response.cookies.get("refresh_token")
 
@@ -90,10 +90,8 @@ async def test_refresh_without_cookie_fails(client: AsyncClient) -> None:
 
 
 async def test_logout_revokes_refresh_token(client: AsyncClient, db_session: AsyncSession) -> None:
-    await _create_user(db_session, email="client6@example.com")
-    await client.post(
-        "/api/v1/auth/login", json={"email": "client6@example.com", "password": "s3cret-pass"}
-    )
+    await _create_user(db_session, username="client6")
+    await client.post("/api/v1/auth/login", json={"username": "client6", "password": "s3cret-pass"})
 
     logout_response = await client.post("/api/v1/auth/logout")
     assert logout_response.status_code == 200

@@ -54,11 +54,11 @@ def _pdf_bytes(text: str) -> bytes:
 
 
 async def _client_with_resume_type(
-    client: AsyncClient, db_session: AsyncSession, *, email: str, with_key: bool = True
+    client: AsyncClient, db_session: AsyncSession, *, username: str, with_key: bool = True
 ) -> tuple[dict, str, str]:
     """(headers, profile_id, resume_type_id) for a new client with one profile + resume type."""
-    await create_user(db_session, email=email, role=Role.CLIENT)
-    headers = await login_headers(client, email=email)
+    await create_user(db_session, username=username, role=Role.CLIENT)
+    headers = await login_headers(client, username=username)
     if with_key:
         await client.put(
             "/api/v1/integrations/openai",
@@ -97,7 +97,7 @@ async def test_resume_types_belong_to_a_profile(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     headers, profile_id, rt_id = await _client_with_resume_type(
-        client, db_session, email="rtlist@example.com"
+        client, db_session, username="rtlist"
     )
     other = await client.post("/api/v1/profiles", headers=headers, json={"name": "Someone Else"})
     await client.post(
@@ -118,11 +118,9 @@ async def test_resume_types_belong_to_a_profile(
 async def test_cannot_add_resume_type_to_another_clients_profile(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    _, profile_id, _ = await _client_with_resume_type(
-        client, db_session, email="rtowner@example.com"
-    )
-    await create_user(db_session, email="rtstranger@example.com", role=Role.CLIENT)
-    stranger = await login_headers(client, email="rtstranger@example.com")
+    _, profile_id, _ = await _client_with_resume_type(client, db_session, username="rtowner")
+    await create_user(db_session, username="rtstranger", role=Role.CLIENT)
+    stranger = await login_headers(client, username="rtstranger")
 
     resp = await client.post(
         "/api/v1/resume-types",
@@ -136,7 +134,7 @@ async def test_bidder_sees_only_assigned_profiles_resume_types(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     headers, profile_id, rt_id = await _client_with_resume_type(
-        client, db_session, email="rtbidowner@example.com"
+        client, db_session, username="rtbidowner"
     )
     other = await client.post("/api/v1/profiles", headers=headers, json={"name": "Other"})
     await client.post(
@@ -147,12 +145,12 @@ async def test_bidder_sees_only_assigned_profiles_resume_types(
     me = (await client.get("/api/v1/auth/me", headers=headers)).json()
     await create_user(
         db_session,
-        email="rtbidder@example.com",
+        username="rtbidder",
         role=Role.BIDDER,
         client_id=me["id"],
         assigned_profile_id=profile_id,
     )
-    bidder = await login_headers(client, email="rtbidder@example.com")
+    bidder = await login_headers(client, username="rtbidder")
 
     resp = await client.get("/api/v1/resume-types", headers=bidder)
     assert [r["id"] for r in resp.json()] == [rt_id]
@@ -165,9 +163,7 @@ async def test_bidder_sees_only_assigned_profiles_resume_types(
 async def test_upload_docx_resume_stores_only_summary(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, _, rt_id = await _client_with_resume_type(
-        client, db_session, email="docxupload@example.com"
-    )
+    headers, _, rt_id = await _client_with_resume_type(client, db_session, username="docxupload")
     summarize = _summary_mock()
     with patch("app.resume_types.service.summarize_resume", new=summarize):
         resp = await _upload(
@@ -185,9 +181,7 @@ async def test_upload_docx_resume_stores_only_summary(
 
 
 async def test_upload_pdf_resume(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, _, rt_id = await _client_with_resume_type(
-        client, db_session, email="pdfupload@example.com"
-    )
+    headers, _, rt_id = await _client_with_resume_type(client, db_session, username="pdfupload")
     summarize = _summary_mock()
     with patch("app.resume_types.service.summarize_resume", new=summarize):
         resp = await _upload(
@@ -202,9 +196,7 @@ async def test_upload_pdf_resume(client: AsyncClient, db_session: AsyncSession) 
 async def test_upload_rejects_unsupported_file_type(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, _, rt_id = await _client_with_resume_type(
-        client, db_session, email="txtupload@example.com"
-    )
+    headers, _, rt_id = await _client_with_resume_type(client, db_session, username="txtupload")
     summarize = _summary_mock()
     with patch("app.resume_types.service.summarize_resume", new=summarize):
         resp = await _upload(client, headers, rt_id, "cv.txt", RESUME_TEXT.encode(), "text/plain")
@@ -217,9 +209,7 @@ async def test_upload_rejects_unsupported_file_type(
 async def test_upload_rejects_file_without_readable_text(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, _, rt_id = await _client_with_resume_type(
-        client, db_session, email="emptyupload@example.com"
-    )
+    headers, _, rt_id = await _client_with_resume_type(client, db_session, username="emptyupload")
     resp = await _upload(client, headers, rt_id, "empty.docx", _docx_bytes(""), DOCX_MIME)
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "resume_unreadable"
@@ -227,7 +217,7 @@ async def test_upload_rejects_file_without_readable_text(
 
 async def test_upload_requires_openai_key(client: AsyncClient, db_session: AsyncSession) -> None:
     headers, _, rt_id = await _client_with_resume_type(
-        client, db_session, email="nokeyupload@example.com", with_key=False
+        client, db_session, username="nokeyupload", with_key=False
     )
     resp = await _upload(client, headers, rt_id, "jane.docx", _docx_bytes(RESUME_TEXT), DOCX_MIME)
     assert resp.status_code == 400
@@ -236,13 +226,13 @@ async def test_upload_requires_openai_key(client: AsyncClient, db_session: Async
 
 async def test_only_owning_client_can_upload(client: AsyncClient, db_session: AsyncSession) -> None:
     headers, profile_id, rt_id = await _client_with_resume_type(
-        client, db_session, email="uploadowner@example.com"
+        client, db_session, username="uploadowner"
     )
     me = (await client.get("/api/v1/auth/me", headers=headers)).json()
-    await create_user(db_session, email="uploadstranger@example.com", role=Role.CLIENT)
+    await create_user(db_session, username="uploadstranger", role=Role.CLIENT)
     await create_user(
         db_session,
-        email="uploadbidder@example.com",
+        username="uploadbidder",
         role=Role.BIDDER,
         client_id=me["id"],
         assigned_profile_id=profile_id,
@@ -251,7 +241,7 @@ async def test_only_owning_client_can_upload(client: AsyncClient, db_session: As
 
     stranger = await _upload(
         client,
-        await login_headers(client, email="uploadstranger@example.com"),
+        await login_headers(client, username="uploadstranger"),
         rt_id,
         "jane.docx",
         data,
@@ -259,7 +249,7 @@ async def test_only_owning_client_can_upload(client: AsyncClient, db_session: As
     )
     bidder = await _upload(
         client,
-        await login_headers(client, email="uploadbidder@example.com"),
+        await login_headers(client, username="uploadbidder"),
         rt_id,
         "jane.docx",
         data,

@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/jd_analyzer"
     jwt_secret: str = "change-me-in-production"
     encryption_key: str = ""
-    admin_email: str = "admin@example.com"
+    admin_username: str = "Admin"
     admin_password: str = "changeme"
     default_ai_model: str = "gpt-4o-mini"
     google_client_id: str = ""

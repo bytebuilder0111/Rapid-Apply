@@ -67,7 +67,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 async def create_user(
     db_session: AsyncSession,
     *,
-    email: str,
+    username: str,
     password: str = "s3cret-pass",
     role: Role = Role.CLIENT,
     is_active: bool = True,
@@ -75,7 +75,7 @@ async def create_user(
     assigned_profile_id: uuid.UUID | None = None,
 ) -> User:
     user = User(
-        email=email,
+        username=username,
         password_hash=hash_password(password),
         name="Test User",
         role=role,
@@ -89,8 +89,12 @@ async def create_user(
     return user
 
 
-async def login_headers(client: AsyncClient, *, email: str, password: str = "s3cret-pass") -> dict:
-    response = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+async def login_headers(
+    client: AsyncClient, *, username: str, password: str = "s3cret-pass"
+) -> dict:
+    response = await client.post(
+        "/api/v1/auth/login", json={"username": username, "password": password}
+    )
     assert response.status_code == 200, response.text
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

@@ -47,11 +47,11 @@ async def _add_resume_type(
 
 
 async def _setup(
-    client: AsyncClient, db_session: AsyncSession, *, email: str
+    client: AsyncClient, db_session: AsyncSession, *, username: str
 ) -> tuple[dict, str, str]:
     """(headers, profile_id, resume_type_id): a client with a key, a profile and one resume."""
-    await create_user(db_session, email=email, role=Role.CLIENT)
-    headers = await login_headers(client, email=email)
+    await create_user(db_session, username=username, role=Role.CLIENT)
+    headers = await login_headers(client, username=username)
     await client.put(
         "/api/v1/integrations/openai",
         headers=headers,
@@ -79,8 +79,8 @@ def _jd(profile_id: str | None = None, **extra) -> dict:
 async def test_analyze_requires_an_uploaded_resume(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    await create_user(db_session, email="noresume@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="noresume@example.com")
+    await create_user(db_session, username="noresume", role=Role.CLIENT)
+    headers = await login_headers(client, username="noresume")
     await client.put(
         "/api/v1/integrations/openai",
         headers=headers,
@@ -103,7 +103,7 @@ async def test_analyze_requires_an_uploaded_resume(
 
 
 async def test_client_must_choose_a_profile(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, _, _ = await _setup(client, db_session, email="noprofilechoice@example.com")
+    headers, _, _ = await _setup(client, db_session, username="noprofilechoice")
     resp = await client.post("/api/v1/analyses/analyze", headers=headers, json=_jd())
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "profile_required"
@@ -112,7 +112,7 @@ async def test_client_must_choose_a_profile(client: AsyncClient, db_session: Asy
 async def test_analyze_compares_only_the_chosen_profiles_resumes(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, profile_id, rt_id = await _setup(client, db_session, email="summaryctx@example.com")
+    headers, profile_id, rt_id = await _setup(client, db_session, username="summaryctx")
     other = (await client.post("/api/v1/profiles", headers=headers, json={"name": "Other"})).json()[
         "id"
     ]
@@ -134,15 +134,15 @@ async def test_analyze_compares_only_the_chosen_profiles_resumes(
 
 
 async def test_analyze_requires_api_key(client: AsyncClient, db_session: AsyncSession) -> None:
-    await create_user(db_session, email="noapikey@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="noapikey@example.com")
+    await create_user(db_session, username="noapikey", role=Role.CLIENT)
+    headers = await login_headers(client, username="noapikey")
     resp = await client.post("/api/v1/analyses/analyze", headers=headers, json=_jd())
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "no_api_key"
 
 
 async def test_analyze_and_save_flow(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, profile_id, rt_id = await _setup(client, db_session, email="analyzeflow@example.com")
+    headers, profile_id, rt_id = await _setup(client, db_session, username="analyzeflow")
     jd = _jd(profile_id, job_link="https://example.com/job/1")
 
     with patch(
@@ -201,7 +201,7 @@ async def test_analyze_and_save_flow(client: AsyncClient, db_session: AsyncSessi
 async def test_save_rejects_resume_from_another_profile(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, profile_id, _ = await _setup(client, db_session, email="crossresume@example.com")
+    headers, profile_id, _ = await _setup(client, db_session, username="crossresume")
     other = (await client.post("/api/v1/profiles", headers=headers, json={"name": "Other"})).json()[
         "id"
     ]
@@ -225,19 +225,19 @@ async def test_save_rejects_resume_from_another_profile(
 async def test_bidder_always_uses_assigned_profile(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, profile_id, rt_id = await _setup(client, db_session, email="bidderowner@example.com")
+    headers, profile_id, rt_id = await _setup(client, db_session, username="bidderowner")
     client_row = (await client.get("/api/v1/auth/me", headers=headers)).json()
     other = (await client.post("/api/v1/profiles", headers=headers, json={"name": "Other"})).json()[
         "id"
     ]
     await create_user(
         db_session,
-        email="analysisbidder@example.com",
+        username="analysisbidder",
         role=Role.BIDDER,
         client_id=client_row["id"],
         assigned_profile_id=profile_id,
     )
-    bidder_headers = await login_headers(client, email="analysisbidder@example.com")
+    bidder_headers = await login_headers(client, username="analysisbidder")
 
     analyze = AsyncMock(return_value=_outcome(recommended=rt_id))
     with patch("app.analysis.service.analyze_job_description", new=analyze):
@@ -261,16 +261,16 @@ async def test_bidder_always_uses_assigned_profile(
 
 
 async def test_bidder_sees_only_own_analyses(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, profile_id, rt_id = await _setup(client, db_session, email="scopeowner@example.com")
+    headers, profile_id, rt_id = await _setup(client, db_session, username="scopeowner")
     client_row = (await client.get("/api/v1/auth/me", headers=headers)).json()
     await create_user(
         db_session,
-        email="scopedbidder@example.com",
+        username="scopedbidder",
         role=Role.BIDDER,
         client_id=client_row["id"],
         assigned_profile_id=profile_id,
     )
-    bidder_headers = await login_headers(client, email="scopedbidder@example.com")
+    bidder_headers = await login_headers(client, username="scopedbidder")
 
     await client.post(
         "/api/v1/analyses",
@@ -288,7 +288,7 @@ async def test_bidder_sees_only_own_analyses(client: AsyncClient, db_session: As
 
 
 async def test_dismatched_jd_cannot_be_saved(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, profile_id, _ = await _setup(client, db_session, email="dismatchsave@example.com")
+    headers, profile_id, _ = await _setup(client, db_session, username="dismatchsave")
     resp = await client.post(
         "/api/v1/analyses",
         headers=headers,
@@ -300,7 +300,7 @@ async def test_dismatched_jd_cannot_be_saved(client: AsyncClient, db_session: As
 
 
 async def test_job_link_is_required(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, profile_id, _ = await _setup(client, db_session, email="nolink@example.com")
+    headers, profile_id, _ = await _setup(client, db_session, username="nolink")
     body = _jd(profile_id)
     del body["job_link"]
     resp = await client.post("/api/v1/analyses/analyze", headers=headers, json=body)

@@ -33,10 +33,10 @@ def fake_google(*, title: str = "Job Tracker", tabs: list[str] | None = None):
 
 
 async def _client_with_profile(
-    client: AsyncClient, db_session: AsyncSession, *, email: str
+    client: AsyncClient, db_session: AsyncSession, *, username: str
 ) -> tuple[dict, str]:
-    await create_user(db_session, email=email, role=Role.CLIENT)
-    headers = await login_headers(client, email=email)
+    await create_user(db_session, username=username, role=Role.CLIENT)
+    headers = await login_headers(client, username=username)
     profile_resp = await client.post("/api/v1/profiles", headers=headers, json={"name": "P1"})
     return headers, profile_resp.json()["id"]
 
@@ -63,9 +63,7 @@ def _config(profile_id: str, **overrides) -> dict:
 async def test_save_and_clear_client_sheet_config(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, profile_id = await _client_with_profile(
-        client, db_session, email="sheetconfig@example.com"
-    )
+    headers, profile_id = await _client_with_profile(client, db_session, username="sheetconfig")
     assert (await client.get("/api/v1/sheet-configs", headers=headers)).json() == [
         _config(profile_id)
     ]
@@ -100,7 +98,7 @@ async def test_save_and_clear_client_sheet_config(
 async def test_save_rejects_a_tab_that_does_not_exist(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, profile_id = await _client_with_profile(client, db_session, email="badtab@example.com")
+    headers, profile_id = await _client_with_profile(client, db_session, username="badtab")
     with fake_google(tabs=["Sheet1"]) as writer:
         resp = await client.put(
             f"/api/v1/sheet-configs/{profile_id}",
@@ -115,9 +113,7 @@ async def test_save_rejects_a_tab_that_does_not_exist(
 async def test_save_requires_google_connection(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, profile_id = await _client_with_profile(
-        client, db_session, email="nogoogle@example.com"
-    )
+    headers, profile_id = await _client_with_profile(client, db_session, username="nogoogle")
     resp = await client.put(
         f"/api/v1/sheet-configs/{profile_id}",
         headers=headers,
@@ -128,7 +124,7 @@ async def test_save_requires_google_connection(
 
 
 async def test_list_spreadsheets_and_tabs(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, _ = await _client_with_profile(client, db_session, email="listsheets@example.com")
+    headers, _ = await _client_with_profile(client, db_session, username="listsheets")
     with fake_google() as writer:
         sheets = await client.get("/api/v1/sheet-configs/spreadsheets", headers=headers)
         tabs = await client.get(
@@ -146,17 +142,17 @@ async def test_bidder_can_only_configure_assigned_profile(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     headers, profile_id = await _client_with_profile(
-        client, db_session, email="bidderconfigowner@example.com"
+        client, db_session, username="bidderconfigowner"
     )
     client_row = (await client.get("/api/v1/auth/me", headers=headers)).json()
     await create_user(
         db_session,
-        email="bidderconfiguser@example.com",
+        username="bidderconfiguser",
         role=Role.BIDDER,
         client_id=client_row["id"],
         assigned_profile_id=profile_id,
     )
-    bidder_headers = await login_headers(client, email="bidderconfiguser@example.com")
+    bidder_headers = await login_headers(client, username="bidderconfiguser")
     other_profile_id = (
         await client.post("/api/v1/profiles", headers=headers, json={"name": "P2"})
     ).json()["id"]
@@ -194,9 +190,7 @@ async def test_bidder_can_only_configure_assigned_profile(
 async def test_analysis_save_records_to_sheet_in_background(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, profile_id = await _client_with_profile(
-        client, db_session, email="recordflow@example.com"
-    )
+    headers, profile_id = await _client_with_profile(client, db_session, username="recordflow")
     await client.put(
         "/api/v1/integrations/openai",
         headers=headers,
@@ -250,9 +244,7 @@ async def test_analysis_save_records_to_sheet_in_background(
 
 
 async def test_retry_requires_failed_status(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, profile_id = await _client_with_profile(
-        client, db_session, email="retryflow@example.com"
-    )
+    headers, profile_id = await _client_with_profile(client, db_session, username="retryflow")
     rt_id = await _resume_type(client, headers, profile_id)
     save_resp = await client.post(
         "/api/v1/analyses",
@@ -288,9 +280,7 @@ async def test_retry_requires_failed_status(client: AsyncClient, db_session: Asy
 async def test_job_already_in_the_sheet_is_rejected(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    headers, profile_id = await _client_with_profile(
-        client, db_session, email="sheetdup@example.com"
-    )
+    headers, profile_id = await _client_with_profile(client, db_session, username="sheetdup")
     rt_id = await _resume_type(client, headers, profile_id)
     with fake_google():
         await client.put(

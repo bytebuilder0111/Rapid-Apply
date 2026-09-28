@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.schemas import AccessTokenResponse, LoginRequest
@@ -42,12 +42,14 @@ def _set_refresh_cookie(response: Response, token: str, expires_at: datetime) ->
 async def login(
     payload: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)
 ) -> AccessTokenResponse:
-    result = await db.execute(select(User).where(User.email == payload.email.lower()))
+    result = await db.execute(
+        select(User).where(func.lower(User.username) == payload.username.strip().lower())
+    )
     user = result.scalar_one_or_none()
     valid_password = user is not None and verify_password(payload.password, user.password_hash)
     is_usable = user is not None and user.is_active and user.deleted_at is None
     if not is_usable or not valid_password:
-        raise AppError("invalid_credentials", "Invalid email or password", 401)
+        raise AppError("invalid_credentials", "Invalid username or password", 401)
 
     access_token = create_access_token(user)
     token, token_hash, expires_at = generate_refresh_token()

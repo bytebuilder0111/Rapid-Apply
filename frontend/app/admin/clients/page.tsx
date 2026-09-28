@@ -44,7 +44,12 @@ import type { ClientUser } from "@/lib/types";
 
 const createSchema = z.object({
   name: z.string().min(1, "Name is required."),
-  email: z.string().email("Enter a valid email address."),
+  username: z
+    .string()
+    .trim()
+    .min(2, "Username must be at least 2 characters.")
+    .max(50, "Username must be at most 50 characters.")
+    .regex(/^[A-Za-z0-9._-]+$/, "Use letters, numbers, dots, dashes or underscores (no spaces)."),
   password: z.string().min(8, "At least 8 characters."),
 });
 type CreateValues = z.infer<typeof createSchema>;
@@ -94,9 +99,9 @@ function CreateClientDialog() {
               {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...register("email")} />
-              {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+              <Label htmlFor="username">Username</Label>
+              <Input id="username" autoComplete="off" {...register("username")} />
+              {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Password</Label>
@@ -136,7 +141,7 @@ function ResetPasswordDialog({
   const onSubmit = async (values: PasswordValues) => {
     try {
       await adminApi.resetClientPassword(client.id, values.new_password);
-      toast.success(`Password reset for ${client.email}`);
+      toast.success(`Password reset for ${client.username}`);
       reset();
       onOpenChange(false);
     } catch (error) {
@@ -150,7 +155,7 @@ function ResetPasswordDialog({
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle>Reset password</DialogTitle>
-            <DialogDescription>Sets a new password for {client.email}.</DialogDescription>
+            <DialogDescription>Sets a new password for {client.username}.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2 py-4">
             <Label htmlFor="new_password">New password</Label>
@@ -202,7 +207,7 @@ function ClientRow({ client }: { client: ClientUser }) {
   return (
     <TableRow>
       <TableCell className="font-medium">{client.name}</TableCell>
-      <TableCell>{client.email}</TableCell>
+      <TableCell>{client.username}</TableCell>
       <TableCell>
         {isDeleted ? (
           <Badge variant="destructive">Deleted</Badge>
@@ -287,7 +292,7 @@ export default function AdminClientsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
+                <TableHead>Username</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>

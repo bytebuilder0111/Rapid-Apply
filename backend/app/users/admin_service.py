@@ -40,8 +40,8 @@ async def get_dashboard(db: AsyncSession) -> DashboardOut:
     )
 
 
-async def _get_email_conflict(db: AsyncSession, email: str) -> bool:
-    result = await db.execute(select(User).where(User.email == email))
+async def _username_taken(db: AsyncSession, username: str) -> bool:
+    result = await db.execute(select(User).where(func.lower(User.username) == username.lower()))
     return result.scalar_one_or_none() is not None
 
 
@@ -52,7 +52,7 @@ async def list_clients(
     if not include_deleted:
         stmt = stmt.where(User.deleted_at.is_(None))
     if search:
-        stmt = stmt.where(User.email.ilike(f"%{search}%") | User.name.ilike(f"%{search}%"))
+        stmt = stmt.where(User.username.ilike(f"%{search}%") | User.name.ilike(f"%{search}%"))
     stmt = stmt.order_by(User.created_at.desc())
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -66,12 +66,12 @@ async def get_client(db: AsyncSession, client_id: UUID) -> User:
 
 
 async def create_client(db: AsyncSession, payload: ClientCreate) -> User:
-    email = payload.email.lower()
-    if await _get_email_conflict(db, email):
-        raise AppError("email_taken", "A user with this email already exists", 409)
+    username = payload.username
+    if await _username_taken(db, username):
+        raise AppError("username_taken", "That username is already taken", 409)
 
     client = User(
-        email=email,
+        username=username,
         name=payload.name,
         password_hash=hash_password(payload.password),
         role=Role.CLIENT,
@@ -85,11 +85,11 @@ async def create_client(db: AsyncSession, payload: ClientCreate) -> User:
 
 async def update_client(db: AsyncSession, client: User, payload: ClientUpdate) -> User:
     data = payload.model_dump(exclude_unset=True)
-    if "email" in data and data["email"]:
-        email = data["email"].lower()
-        if email != client.email and await _get_email_conflict(db, email):
-            raise AppError("email_taken", "A user with this email already exists", 409)
-        client.email = email
+    if data.get("username"):
+        username = data["username"]
+        if username.lower() != client.username.lower() and await _username_taken(db, username):
+            raise AppError("username_taken", "That username is already taken", 409)
+        client.username = username
     if "name" in data and data["name"]:
         client.name = data["name"]
     await db.commit()
@@ -140,7 +140,7 @@ async def list_bidders(
     if client_id is not None:
         stmt = stmt.where(User.client_id == client_id)
     if search:
-        stmt = stmt.where(User.email.ilike(f"%{search}%") | User.name.ilike(f"%{search}%"))
+        stmt = stmt.where(User.username.ilike(f"%{search}%") | User.name.ilike(f"%{search}%"))
     stmt = stmt.order_by(User.created_at.desc())
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -160,9 +160,9 @@ async def _validate_profile_for_client(db: AsyncSession, profile_id: UUID, clien
 
 
 async def create_bidder(db: AsyncSession, payload: BidderCreate) -> User:
-    email = payload.email.lower()
-    if await _get_email_conflict(db, email):
-        raise AppError("email_taken", "A user with this email already exists", 409)
+    username = payload.username
+    if await _username_taken(db, username):
+        raise AppError("username_taken", "That username is already taken", 409)
 
     client = await get_client(db, payload.client_id)
     if client.deleted_at is not None:
@@ -170,7 +170,7 @@ async def create_bidder(db: AsyncSession, payload: BidderCreate) -> User:
     await _validate_profile_for_client(db, payload.assigned_profile_id, client.id)
 
     bidder = User(
-        email=email,
+        username=username,
         name=payload.name,
         password_hash=hash_password(payload.password),
         role=Role.BIDDER,
@@ -186,11 +186,11 @@ async def create_bidder(db: AsyncSession, payload: BidderCreate) -> User:
 
 async def update_bidder(db: AsyncSession, bidder: User, payload: BidderUpdate) -> User:
     data = payload.model_dump(exclude_unset=True)
-    if "email" in data and data["email"]:
-        email = data["email"].lower()
-        if email != bidder.email and await _get_email_conflict(db, email):
-            raise AppError("email_taken", "A user with this email already exists", 409)
-        bidder.email = email
+    if data.get("username"):
+        username = data["username"]
+        if username.lower() != bidder.username.lower() and await _username_taken(db, username):
+            raise AppError("username_taken", "That username is already taken", 409)
+        bidder.username = username
     if "name" in data and data["name"]:
         bidder.name = data["name"]
     if "assigned_profile_id" in data and data["assigned_profile_id"]:

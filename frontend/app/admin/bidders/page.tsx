@@ -43,7 +43,12 @@ import type { BidderUser, ClientUser } from "@/lib/types";
 const createSchema = z.object({
   client_id: z.string().min(1, "Pick a client."),
   name: z.string().min(1, "Name is required."),
-  email: z.string().email("Enter a valid email address."),
+  username: z
+    .string()
+    .trim()
+    .min(2, "Username must be at least 2 characters.")
+    .max(50, "Username must be at most 50 characters.")
+    .regex(/^[A-Za-z0-9._-]+$/, "Use letters, numbers, dots, dashes or underscores (no spaces)."),
   password: z.string().min(8, "At least 8 characters."),
   assigned_profile_id: z.string().min(1, "Pick a profile."),
 });
@@ -118,7 +123,7 @@ function CreateBidderDialog() {
                     <SelectContent>
                       {(clients ?? []).map((c: ClientUser) => (
                         <SelectItem key={c.id} value={c.id}>
-                          {c.name} ({c.email})
+                          {c.name} ({c.username})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -175,9 +180,9 @@ function CreateBidderDialog() {
               {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...register("email")} />
-              {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+              <Label htmlFor="username">Username</Label>
+              <Input id="username" autoComplete="off" {...register("username")} />
+              {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Password</Label>
@@ -217,7 +222,7 @@ function ResetPasswordDialog({
   const onSubmit = async (values: PasswordValues) => {
     try {
       await adminApi.resetBidderPassword(bidder.id, values.new_password);
-      toast.success(`Password reset for ${bidder.email}`);
+      toast.success(`Password reset for ${bidder.username}`);
       reset();
       onOpenChange(false);
     } catch (error) {
@@ -231,7 +236,7 @@ function ResetPasswordDialog({
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle>Reset password</DialogTitle>
-            <DialogDescription>Sets a new password for {bidder.email}.</DialogDescription>
+            <DialogDescription>Sets a new password for {bidder.username}.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2 py-4">
             <Label htmlFor="new_password">New password</Label>
@@ -271,7 +276,7 @@ function BidderRow({ bidder, clients }: { bidder: BidderUser; clients: ClientUse
   return (
     <TableRow>
       <TableCell className="font-medium">{bidder.name}</TableCell>
-      <TableCell>{bidder.email}</TableCell>
+      <TableCell>{bidder.username}</TableCell>
       <TableCell>{clientName}</TableCell>
       <TableCell>{bidder.is_active ? <Badge>Active</Badge> : <Badge variant="secondary">Inactive</Badge>}</TableCell>
       <TableCell className="space-x-2 text-right">
@@ -319,7 +324,7 @@ export default function AdminBiddersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
+                <TableHead>Username</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>

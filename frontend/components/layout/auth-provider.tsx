@@ -12,7 +12,7 @@ type LoginResponse = { access_token: string; user: UserOut };
 type AuthContextValue = {
   user: UserOut | null;
   status: AuthStatus;
-  login: (email: string, password: string) => Promise<UserOut>;
+  login: (username: string, password: string) => Promise<UserOut>;
   logout: () => Promise<void>;
 };
 
@@ -42,8 +42,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await api.post<LoginResponse>("/auth/login", { email, password }, { skipAuth: true });
+  const login = useCallback(async (username: string, password: string) => {
+    const data = await api.post<LoginResponse>("/auth/login", { username, password }, { skipAuth: true });
     setAccessToken(data.access_token);
     setUser(data.user);
     setStatus("authenticated");

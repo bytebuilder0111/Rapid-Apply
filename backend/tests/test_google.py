@@ -12,8 +12,8 @@ from .conftest import create_user, login_headers
 async def test_authorize_requires_google_configured(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    await create_user(db_session, email="googleauth@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="googleauth@example.com")
+    await create_user(db_session, username="googleauth", role=Role.CLIENT)
+    headers = await login_headers(client, username="googleauth")
 
     resp = await client.get("/api/v1/integrations/google/authorize", headers=headers)
     assert resp.status_code == 500
@@ -23,8 +23,8 @@ async def test_authorize_requires_google_configured(
 async def test_get_google_connection_disconnected_by_default(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    await create_user(db_session, email="googlestatus@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="googlestatus@example.com")
+    await create_user(db_session, username="googlestatus", role=Role.CLIENT)
+    headers = await login_headers(client, username="googlestatus")
 
     resp = await client.get("/api/v1/integrations/google", headers=headers)
     assert resp.status_code == 200
@@ -34,8 +34,8 @@ async def test_get_google_connection_disconnected_by_default(
 async def test_disconnect_with_no_connection_is_a_noop(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    await create_user(db_session, email="googledisconnect@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="googledisconnect@example.com")
+    await create_user(db_session, username="googledisconnect", role=Role.CLIENT)
+    headers = await login_headers(client, username="googledisconnect")
 
     resp = await client.delete("/api/v1/integrations/google", headers=headers)
     assert resp.status_code == 204
@@ -44,17 +44,17 @@ async def test_disconnect_with_no_connection_is_a_noop(
 async def test_handle_callback_saves_connection_and_bidder_can_read_status(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    await create_user(db_session, email="googlecallback@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="googlecallback@example.com")
+    await create_user(db_session, username="googlecallback", role=Role.CLIENT)
+    headers = await login_headers(client, username="googlecallback")
     me = (await client.get("/api/v1/auth/me", headers=headers)).json()
 
     await create_user(
         db_session,
-        email="googlebidder@example.com",
+        username="googlebidder",
         role=Role.BIDDER,
         client_id=me["id"],
     )
-    bidder_headers = await login_headers(client, email="googlebidder@example.com")
+    bidder_headers = await login_headers(client, username="googlebidder")
 
     with (
         patch("app.integrations.google_service.settings.google_client_id", "test-client-id"),

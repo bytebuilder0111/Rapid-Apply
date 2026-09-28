@@ -1,16 +1,16 @@
 import { api } from "@/lib/api";
 import type { BidderUser, ClientUser, DashboardCounts } from "@/lib/types";
 
-export type ClientCreateInput = { email: string; name: string; password: string };
-export type ClientUpdateInput = { email?: string; name?: string };
+export type ClientCreateInput = { username: string; name: string; password: string };
+export type ClientUpdateInput = { username?: string; name?: string };
 export type BidderCreateInput = {
   client_id: string;
-  email: string;
+  username: string;
   name: string;
   password: string;
   assigned_profile_id: string;
 };
-export type BidderUpdateInput = { email?: string; name?: string; assigned_profile_id?: string };
+export type BidderUpdateInput = { username?: string; name?: string; assigned_profile_id?: string };
 
 export const adminApi = {
   dashboard: () => api.get<DashboardCounts>("/admin/dashboard"),

@@ -2,7 +2,7 @@
 header No | Company Name | Position Name | Job Link | ...  | Date) into job_history, so the
 duplicate check knows about jobs applied to before this app existed.
 
-    uv run python -m app.analysis.history_import --client maxfranks748@gmail.com \
+    uv run python -m app.analysis.history_import --client Max \
         --profile "Lakeyth Terry" C:/Users/Administrator/Downloads/Lakeyth.txt
 
 Re-importing the same file replaces that file's earlier rows instead of adding them twice.
@@ -126,13 +126,13 @@ async def import_history(
     return len(rows)
 
 
-async def _main(client_email: str, profile_name: str, path: Path) -> None:
+async def _main(client_username: str, profile_name: str, path: Path) -> None:
     rows = parse_history(path.read_text(encoding="utf-8-sig"))
     async with SessionLocal() as db:
         client = (
             await db.execute(
                 select(User).where(
-                    func.lower(User.email) == client_email.lower(), User.role == Role.CLIENT
+                    func.lower(User.username) == client_username.lower(), User.role == Role.CLIENT
                 )
             )
         ).scalar_one()
@@ -155,7 +155,7 @@ async def _main(client_email: str, profile_name: str, path: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--client", required=True, help="the client's login email")
+    parser.add_argument("--client", required=True, help="the client's username")
     parser.add_argument("--profile", required=True, help='profile name, e.g. "Lakeyth Terry"')
     parser.add_argument("file", type=Path)
     args = parser.parse_args()

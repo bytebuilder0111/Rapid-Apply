@@ -12,8 +12,8 @@ from .conftest import create_user, login_headers
 async def test_non_client_cannot_access_integrations(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    await create_user(db_session, email="bidder-int@example.com", role=Role.BIDDER)
-    headers = await login_headers(client, email="bidder-int@example.com")
+    await create_user(db_session, username="bidder-int", role=Role.BIDDER)
+    headers = await login_headers(client, username="bidder-int")
 
     resp = await client.get("/api/v1/integrations/openai", headers=headers)
 
@@ -21,8 +21,8 @@ async def test_non_client_cannot_access_integrations(
 
 
 async def test_no_key_configured_by_default(client: AsyncClient, db_session: AsyncSession) -> None:
-    await create_user(db_session, email="freshclient@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="freshclient@example.com")
+    await create_user(db_session, username="freshclient", role=Role.CLIENT)
+    headers = await login_headers(client, username="freshclient")
 
     resp = await client.get("/api/v1/integrations/openai", headers=headers)
 
@@ -33,8 +33,8 @@ async def test_no_key_configured_by_default(client: AsyncClient, db_session: Asy
 
 
 async def test_save_mask_and_delete_key(client: AsyncClient, db_session: AsyncSession) -> None:
-    await create_user(db_session, email="keyclient@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="keyclient@example.com")
+    await create_user(db_session, username="keyclient", role=Role.CLIENT)
+    headers = await login_headers(client, username="keyclient")
 
     save_resp = await client.put(
         "/api/v1/integrations/openai",
@@ -59,8 +59,8 @@ async def test_save_mask_and_delete_key(client: AsyncClient, db_session: AsyncSe
 
 
 async def test_test_key_requires_saved_key(client: AsyncClient, db_session: AsyncSession) -> None:
-    await create_user(db_session, email="notestkey@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="notestkey@example.com")
+    await create_user(db_session, username="notestkey", role=Role.CLIENT)
+    headers = await login_headers(client, username="notestkey")
 
     resp = await client.post("/api/v1/integrations/openai/test", headers=headers)
 
@@ -71,8 +71,8 @@ async def test_test_key_requires_saved_key(client: AsyncClient, db_session: Asyn
 async def test_test_key_success_calls_openai_with_saved_key(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    await create_user(db_session, email="testkeyok@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="testkeyok@example.com")
+    await create_user(db_session, username="testkeyok", role=Role.CLIENT)
+    headers = await login_headers(client, username="testkeyok")
     await client.put(
         "/api/v1/integrations/openai",
         headers=headers,
@@ -89,8 +89,8 @@ async def test_test_key_success_calls_openai_with_saved_key(
 async def test_test_key_surfaces_invalid_key_error(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    await create_user(db_session, email="testkeybad@example.com", role=Role.CLIENT)
-    headers = await login_headers(client, email="testkeybad@example.com")
+    await create_user(db_session, username="testkeybad", role=Role.CLIENT)
+    headers = await login_headers(client, username="testkeybad")
     await client.put(
         "/api/v1/integrations/openai",
         headers=headers,

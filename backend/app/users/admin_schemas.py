@@ -1,14 +1,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.users.usernames import Username
 
 
 class ClientOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    email: EmailStr
+    username: str
     name: str
     is_active: bool
     deleted_at: datetime | None
@@ -16,13 +18,13 @@ class ClientOut(BaseModel):
 
 
 class ClientCreate(BaseModel):
-    email: EmailStr
+    username: Username
     name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=8)
 
 
 class ClientUpdate(BaseModel):
-    email: EmailStr | None = None
+    username: Username | None = None
     name: str | None = Field(default=None, min_length=1, max_length=255)
 
 
@@ -30,7 +32,7 @@ class BidderOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    email: EmailStr
+    username: str
     name: str
     is_active: bool
     client_id: UUID
@@ -40,14 +42,14 @@ class BidderOut(BaseModel):
 
 class BidderCreate(BaseModel):
     client_id: UUID
-    email: EmailStr
+    username: Username
     name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=8)
     assigned_profile_id: UUID
 
 
 class BidderUpdate(BaseModel):
-    email: EmailStr | None = None
+    username: Username | None = None
     name: str | None = Field(default=None, min_length=1, max_length=255)
     assigned_profile_id: UUID | None = None
 

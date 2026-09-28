@@ -2,7 +2,7 @@ export type Role = "ADMIN" | "CLIENT" | "BIDDER";
 
 export type UserOut = {
   id: string;
-  email: string;
+  username: string;
   name: string;
   role: Role;
   client_id: string | null;

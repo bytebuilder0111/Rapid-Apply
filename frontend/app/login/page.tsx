@@ -15,7 +15,7 @@ import { ApiError } from "@/lib/api";
 import { roleHomePath } from "@/lib/auth";
 
 const loginSchema = z.object({
-  email: z.string().email("Enter a valid email address."),
+  username: z.string().trim().min(1, "Enter your username."),
   password: z.string().min(1, "Password is required."),
 });
 
@@ -50,7 +50,7 @@ function LoginForm() {
   const onSubmit = async (values: LoginValues) => {
     setFormError(null);
     try {
-      const loggedInUser = await login(values.email, values.password);
+      const loggedInUser = await login(values.username, values.password);
       router.replace(searchParams.get("next") ?? roleHomePath(loggedInUser.role));
     } catch (error) {
       setFormError(error instanceof ApiError ? error.message : "Something went wrong. Please try again.");
@@ -62,14 +62,14 @@ function LoginForm() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-2xl">Sign in</CardTitle>
-          <CardDescription>Enter your email and password to continue.</CardDescription>
+          <CardDescription>Enter your username and password to continue.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)} noValidate>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" autoComplete="email" {...register("email")} />
-              {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+              <Label htmlFor="username">Username</Label>
+              <Input id="username" autoComplete="username" {...register("username")} />
+              {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Password</Label>

@@ -145,7 +145,7 @@ export default function AdminProfilesPage() {
           <SelectContent>
             {(clients ?? []).map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.name} ({c.email})
+                {c.name} ({c.username})
               </SelectItem>
             ))}
           </SelectContent>

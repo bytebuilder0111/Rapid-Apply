@@ -32,7 +32,7 @@ export type ResumeType = {
 
 export type ClientUser = {
   id: string;
-  email: string;
+  username: string;
   name: string;
   is_active: boolean;
   deleted_at: string | null;
@@ -41,7 +41,7 @@ export type ClientUser = {
 
 export type BidderUser = {
   id: string;
-  email: string;
+  username: string;
   name: string;
   is_active: boolean;
   client_id: string;

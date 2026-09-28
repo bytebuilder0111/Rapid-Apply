@@ -119,7 +119,7 @@ export function AppShell({
             <DropdownMenuContent align="end">
               <div className="px-1.5 py-1">
                 <p className="text-sm font-medium">{user?.name}</p>
-                <p className="text-xs font-normal text-muted-foreground">{user?.email}</p>
+                <p className="text-xs font-normal text-muted-foreground">{user?.username}</p>
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>
