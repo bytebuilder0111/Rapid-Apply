@@ -206,6 +206,16 @@ export function SheetConfigList() {
     queryFn: sheetConfigsApi.list,
     enabled: google.data?.connected === true,
   });
+  const [profileId, setProfileId] = useState("");
+
+  // Keep a valid selection: default to the first profile, recover if it disappears.
+  useEffect(() => {
+    const list = configs.data;
+    if (list && !list.some((c) => c.profile_id === profileId)) {
+      setProfileId(list[0]?.profile_id ?? "");
+    }
+  }, [configs.data, profileId]);
+  const selected = configs.data?.find((c) => c.profile_id === profileId);
 
   if (google.isLoading) return <Skeleton className="h-40" />;
   if (google.isError) {
@@ -251,7 +261,25 @@ export function SheetConfigList() {
             : "You don't have an assigned profile yet."}
         </p>
       )}
-      {configs.data?.map((config) => <SheetConfigRow key={config.profile_id} config={config} />)}
+      {user?.role === "CLIENT" && configs.data && configs.data.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="config-profile">Profile</Label>
+          <select
+            id="config-profile"
+            className={SELECT_CLASS}
+            value={profileId}
+            onChange={(e) => setProfileId(e.target.value)}
+          >
+            {configs.data.map((c) => (
+              <option key={c.profile_id} value={c.profile_id}>
+                {c.profile_name}
+                {c.enabled ? ` (${c.spreadsheet_name} › ${c.sheet_name})` : " (no sheet yet)"}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {selected && <SheetConfigRow key={selected.profile_id} config={selected} />}
     </div>
   );
 }
