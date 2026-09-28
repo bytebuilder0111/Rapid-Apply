@@ -21,6 +21,7 @@ def fake_google(*, title: str = "Job Tracker", tabs: list[str] | None = None):
     ):
         writer: MagicMock = writer_cls.return_value
         writer.get_spreadsheet.return_value = (title, tabs or ["Sheet1", "Job Log"])
+        writer.sheet_context.return_value = (5, "America/Chicago", "en_US")
         writer.list_spreadsheets.return_value = [
             {"id": "sheet123", "name": "Job Tracker"},
             {"id": "sheet456", "name": "Budget"},
@@ -218,18 +219,17 @@ async def test_analysis_save_records_to_sheet_in_background(
         "prompt_version": "jd-analysis-v1",
     }
 
-    with patch(
-        "app.sheets.service.google_service.get_decrypted_refresh_token",
-        new=AsyncMock(return_value="fake-refresh-token"),
-    ):
-        with patch("app.sheets.service.SheetsWriter") as writer_cls:
-            save_resp = await client.post("/api/v1/analyses", headers=headers, json=payload)
+    with fake_google() as writer:
+        save_resp = await client.post("/api/v1/analyses", headers=headers, json=payload)
 
     assert save_resp.status_code == 201, save_resp.text
     # The response is built before the background task runs, so it still reads PENDING.
     assert save_resp.json()["record_status"] == "PENDING"
     analysis_id = save_resp.json()["id"]
-    writer_cls.return_value.append_row.assert_called_once()
+    writer.append_row.assert_called_once()
+    spreadsheet_id, tab, row = writer.append_row.call_args.args
+    assert (spreadsheet_id, tab) == ("sheet123", "Sheet1")
+    assert row[0] == 5 and row[1:3] == ["Acme", "Backend Eng"] and row[4] == "Applied"
 
     final = await client.get(f"/api/v1/analyses/{analysis_id}", headers=headers)
     assert final.json()["record_status"] == "SUCCESS"

@@ -1,7 +1,9 @@
 import asyncio
 import json
 from collections.abc import Callable
+from datetime import datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
@@ -284,20 +286,42 @@ async def initial_record_status(
     return RecordStatus.PENDING if _is_eligible(config) else RecordStatus.SKIPPED
 
 
-def _build_row(analysis: Analysis, resume_name: str, recorded_by: str) -> list[str]:
-    result = analysis.result
+# A Sheets cell holds at most 50,000 characters.
+_MAX_CELL_CHARS = 49_000
+RECORDED_STATUS = "Applied"
+
+
+def _text(value: str) -> str:
+    """Rows are written with USER_ENTERED; a leading apostrophe keeps text like "=..." or
+    "+1..." from being read as a formula or number (Sheets hides the apostrophe)."""
+    return "'" + value if value[:1] in ("=", "+", "-", "@") else value
+
+
+def _sheet_date(moment: datetime, time_zone: str, locale: str) -> str:
+    """The date as the spreadsheet's owner would type it, in the spreadsheet's time zone:
+    "9/4/2026 12:09:33" for US-locale sheets, an unambiguous ISO form otherwise."""
+    try:
+        local = moment.astimezone(ZoneInfo(time_zone))
+    except (ZoneInfoNotFoundError, ValueError):
+        local = moment
+    if locale == "en_US":
+        return f"{local.month}/{local.day}/{local.year} {local:%H:%M:%S}"
+    return f"{local:%Y-%m-%d %H:%M:%S}"
+
+
+def _build_row(
+    analysis: Analysis, *, number: int, resume_name: str, time_zone: str, locale: str
+) -> list:
+    """No | Company Name | Position Name | Job Link | Status | Resume | Date | Job Description"""
     return [
-        analysis.created_at.isoformat(),
-        analysis.company_name,
-        analysis.position_name,
-        analysis.job_link or "",
-        result.get("main_backend_skill", ""),
-        result.get("backend_framework") or "",
-        ", ".join(result.get("secondary_skills", [])),
-        result.get("seniority", ""),
-        resume_name,
-        recorded_by,
-        str(result.get("confidence", "")),
+        number,
+        _text(analysis.company_name),
+        _text(analysis.position_name),
+        _text(analysis.job_link or ""),
+        RECORDED_STATUS,
+        _text(resume_name),
+        _sheet_date(analysis.created_at, time_zone, locale),
+        _text(analysis.job_description[:_MAX_CELL_CHARS]),
     ]
 
 
@@ -335,10 +359,17 @@ async def record_analysis(analysis_id: UUID) -> None:
         try:
             refresh_token = await google_service.get_decrypted_refresh_token(db, analysis.client_id)
             writer = SheetsWriter(refresh_token)
-            row = _build_row(
-                analysis, resume_type.name if resume_type else "", creator.name if creator else ""
-            )
             await asyncio.to_thread(writer.ensure_header, config.spreadsheet_id, config.sheet_name)
+            number, time_zone, locale = await asyncio.to_thread(
+                writer.sheet_context, config.spreadsheet_id, config.sheet_name
+            )
+            row = _build_row(
+                analysis,
+                number=number,
+                resume_name=resume_type.name if resume_type else "",
+                time_zone=time_zone,
+                locale=locale,
+            )
             await asyncio.to_thread(
                 writer.append_row, config.spreadsheet_id, config.sheet_name, row
             )
