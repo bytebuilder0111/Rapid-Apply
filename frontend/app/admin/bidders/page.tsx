@@ -115,7 +115,7 @@ function CreateBidderDialog() {
                 name="assigned_profile_id"
                 render={({ field }) => (
                   <Select
-                    value={field.value}
+                    value={field.value ?? null}
                     onValueChange={field.onChange}
                     disabled={profilesLoading}
                   >
