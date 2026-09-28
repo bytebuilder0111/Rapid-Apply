@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import analyze_job_description
+from app.analysis.duplicates import Entry, find_duplicate
 from app.analysis.models import Analysis
 from app.analysis.schemas import AnalysisOut, AnalyzeRequest, SaveAnalysisRequest
 from app.errors import AppError
@@ -14,7 +15,7 @@ from app.integrations.service import get_decrypted_key_for_client, get_settings_
 from app.models import Role, User
 from app.profiles.models import Profile
 from app.resume_types.models import ResumeType
-from app.sheets.service import initial_record_status
+from app.sheets.service import initial_record_status, recorded_jobs
 
 
 def normalize_jd_hash(job_description: str) -> str:
@@ -53,23 +54,41 @@ async def _resumes_context(db: AsyncSession, profile_id: UUID) -> list[dict]:
     ]
 
 
-async def _check_duplicate(
-    db: AsyncSession, *, client_id: UUID, job_link: str | None, jd_hash: str
+async def _find_duplicate(
+    db: AsyncSession, *, user: User, client_id: UUID, profile: Profile, payload
 ) -> str | None:
-    if job_link:
-        result = await db.execute(
-            select(Analysis.id).where(
-                Analysis.client_id == client_id, Analysis.job_link == job_link
-            )
-        )
-        if result.scalar_one_or_none() is not None:
-            return "This job link was already analyzed for this client."
-    result = await db.execute(
-        select(Analysis.id).where(Analysis.client_id == client_id, Analysis.jd_hash == jd_hash)
+    """Checks the job against this profile's saved analyses, then its bid sheet."""
+    rows = await db.execute(
+        select(
+            Analysis.company_name, Analysis.position_name, Analysis.job_link, Analysis.created_at
+        ).where(Analysis.client_id == client_id, Analysis.profile_id == profile.id)
     )
-    if result.scalar_one_or_none() is not None:
-        return "An identical job description was already analyzed for this client."
-    return None
+    entries = [
+        Entry(
+            company=company,
+            position=position,
+            job_link=job_link or "",
+            where=f"saved for {profile.name} on {created:%Y-%m-%d}",
+        )
+        for company, position, job_link, created in rows.all()
+    ]
+    entries += await recorded_jobs(db, client_id=client_id, profile_id=profile.id, user=user)
+    return find_duplicate(
+        entries,
+        company=payload.company_name,
+        position=payload.position_name,
+        job_link=payload.job_link,
+    )
+
+
+async def _reject_duplicate(
+    db: AsyncSession, *, user: User, client_id: UUID, profile: Profile, payload
+) -> None:
+    reason = await _find_duplicate(
+        db, user=user, client_id=client_id, profile=profile, payload=payload
+    )
+    if reason:
+        raise AppError("duplicate_job", f"Duplicate job: {reason}", 409)
 
 
 async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: AnalyzeRequest):
@@ -88,27 +107,28 @@ async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: Ana
             f"{profile.name} has no uploaded resumes yet. Upload one under Resume Types first.",
             400,
         )
-    outcome = await analyze_job_description(
+    # Before the AI call, so a duplicate costs nothing.
+    await _reject_duplicate(db, user=user, client_id=client_id, profile=profile, payload=payload)
+    return await analyze_job_description(
         api_key=api_key,
         model=ai_settings.model,
         job_description=payload.job_description,
         resumes=resumes,
     )
 
-    jd_hash = normalize_jd_hash(payload.job_description)
-    duplicate_reason = await _check_duplicate(
-        db, client_id=client_id, job_link=payload.job_link, jd_hash=jd_hash
-    )
-
-    return outcome, duplicate_reason
-
 
 async def save_analysis(
     db: AsyncSession, *, user: User, client_id: UUID, payload: SaveAnalysisRequest
 ) -> AnalysisOut:
+    if not payload.result.recommended_resume_type_id:
+        raise AppError(
+            "dismatched_jd", "A Dismatched JD has no matching resume, so it can't be saved.", 400
+        )
     profile = await _resolve_profile(
         db, user=user, client_id=client_id, profile_id=payload.profile_id
     )
+    # Checked again at save: the sheet may have changed since Analyze.
+    await _reject_duplicate(db, user=user, client_id=client_id, profile=profile, payload=payload)
     selected_resume_type_id = payload.selected_resume_type_id
     if selected_resume_type_id is not None:
         resume_type = await db.get(ResumeType, selected_resume_type_id)

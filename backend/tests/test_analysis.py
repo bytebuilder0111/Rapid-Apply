@@ -65,7 +65,12 @@ async def _setup(
 
 
 def _jd(profile_id: str | None = None, **extra) -> dict:
-    body = {"company_name": "Acme", "position_name": "Eng", "job_description": "A Python JD"}
+    body = {
+        "company_name": "Acme",
+        "position_name": "Eng",
+        "job_description": "A Python JD",
+        "job_link": "https://acme.example/jobs/1",
+    }
     if profile_id:
         body["profile_id"] = profile_id
     return body | extra
@@ -148,7 +153,6 @@ async def test_analyze_and_save_flow(client: AsyncClient, db_session: AsyncSessi
     assert analyze_resp.status_code == 200, analyze_resp.text
     body = analyze_resp.json()
     assert body["result"]["recommended_resume_type_id"] == rt_id
-    assert body["duplicate_warning"] is False
 
     save_resp = await client.post(
         "/api/v1/analyses",
@@ -170,13 +174,23 @@ async def test_analyze_and_save_flow(client: AsyncClient, db_session: AsyncSessi
     assert saved["recommended_resume_type_id"] == rt_id
     assert saved["record_status"] == "SKIPPED"
 
-    # Re-analyzing the same JD/job link now surfaces the non-blocking duplicate warning.
-    with patch(
-        "app.analysis.service.analyze_job_description",
-        new=AsyncMock(return_value=_outcome(recommended=rt_id)),
-    ):
-        second_resp = await client.post("/api/v1/analyses/analyze", headers=headers, json=jd)
-    assert second_resp.json()["duplicate_warning"] is True
+    # The same job again is blocked before the AI is called, by link or by company + position.
+    analyze = AsyncMock(return_value=_outcome(recommended=rt_id))
+    with patch("app.analysis.service.analyze_job_description", new=analyze):
+        same_link = await client.post(
+            "/api/v1/analyses/analyze",
+            headers=headers,
+            json=jd | {"company_name": "Other", "position_name": "Other"},
+        )
+        same_title = await client.post(
+            "/api/v1/analyses/analyze",
+            headers=headers,
+            json=jd | {"job_link": "https://acme.example/jobs/999"},
+        )
+    assert same_link.status_code == 409
+    assert same_link.json()["error"]["code"] == "duplicate_job"
+    assert same_title.status_code == 409
+    analyze.assert_not_called()
 
     list_resp = await client.get(
         "/api/v1/analyses", headers=headers, params={"profile_id": profile_id}
@@ -199,7 +213,7 @@ async def test_save_rejects_resume_from_another_profile(
         json=_jd(profile_id)
         | {
             "selected_resume_type_id": other_rt,
-            "result": _outcome().result.model_dump(),
+            "result": _outcome(recommended=other_rt).result.model_dump(),
             "model": "gpt-4o-mini",
             "prompt_version": "v",
         },
@@ -247,7 +261,7 @@ async def test_bidder_always_uses_assigned_profile(
 
 
 async def test_bidder_sees_only_own_analyses(client: AsyncClient, db_session: AsyncSession) -> None:
-    headers, profile_id, _ = await _setup(client, db_session, email="scopeowner@example.com")
+    headers, profile_id, rt_id = await _setup(client, db_session, email="scopeowner@example.com")
     client_row = (await client.get("/api/v1/auth/me", headers=headers)).json()
     await create_user(
         db_session,
@@ -262,8 +276,32 @@ async def test_bidder_sees_only_own_analyses(client: AsyncClient, db_session: As
         "/api/v1/analyses",
         headers=headers,
         json=_jd(profile_id)
-        | {"result": _outcome().result.model_dump(), "model": "gpt-4o-mini", "prompt_version": "v"},
+        | {
+            "result": _outcome(recommended=rt_id).result.model_dump(),
+            "model": "gpt-4o-mini",
+            "prompt_version": "v",
+        },
     )
 
     assert (await client.get("/api/v1/analyses", headers=bidder_headers)).json() == []
     assert len((await client.get("/api/v1/analyses", headers=headers)).json()) == 1
+
+
+async def test_dismatched_jd_cannot_be_saved(client: AsyncClient, db_session: AsyncSession) -> None:
+    headers, profile_id, _ = await _setup(client, db_session, email="dismatchsave@example.com")
+    resp = await client.post(
+        "/api/v1/analyses",
+        headers=headers,
+        json=_jd(profile_id)
+        | {"result": _outcome().result.model_dump(), "model": "gpt-4o-mini", "prompt_version": "v"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "dismatched_jd"
+
+
+async def test_job_link_is_required(client: AsyncClient, db_session: AsyncSession) -> None:
+    headers, profile_id, _ = await _setup(client, db_session, email="nolink@example.com")
+    body = _jd(profile_id)
+    del body["job_link"]
+    resp = await client.post("/api/v1/analyses/analyze", headers=headers, json=body)
+    assert resp.status_code == 422

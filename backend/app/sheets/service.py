@@ -10,6 +10,7 @@ from googleapiclient.errors import HttpError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analysis.duplicates import Entry
 from app.analysis.models import Analysis, RecordStatus
 from app.db import SessionLocal
 from app.errors import AppError
@@ -277,6 +278,25 @@ async def resolve_config(
 
 def _is_eligible(config: SheetConfig | None) -> bool:
     return bool(config and config.enabled and config.spreadsheet_id and config.sheet_name)
+
+
+async def recorded_jobs(
+    db: AsyncSession, *, client_id: UUID, profile_id: UUID, user: User
+) -> list[Entry]:
+    """The jobs already in the sheet this user's analyses for the profile would go to, for the
+    duplicate check. Empty when no sheet is set up."""
+    config = await resolve_config(db, client_id=client_id, profile_id=profile_id, user=user)
+    if not _is_eligible(config):
+        return []
+    assert config is not None
+    rows = await _call_google(
+        db, client_id, lambda w: w.recorded_jobs(config.spreadsheet_id, config.sheet_name)
+    )
+    where = f"{config.spreadsheet_name or 'your sheet'} > {config.sheet_name}"
+    return [
+        Entry(company=company, position=position, job_link=link, where=f"row {n} of {where}")
+        for n, (company, position, link) in rows
+    ]
 
 
 async def initial_record_status(

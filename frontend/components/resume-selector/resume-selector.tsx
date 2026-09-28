@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { analysisApi, type AnalyzeOutput } from "@/lib/analysis-api";
+import { analysisApi, type Analysis, type AnalyzeOutput } from "@/lib/analysis-api";
 import { ApiError } from "@/lib/api";
 import { profilesApi } from "@/lib/profiles-api";
 import { resumeTypesApi } from "@/lib/resume-types-api";
@@ -24,12 +24,45 @@ const formSchema = z.object({
   company_name: z.string().min(1, "Company name is required."),
   position_name: z.string().min(1, "Position name is required."),
   job_description: z.string().min(20, "Paste the full job description."),
-  job_link: z.string().url("Enter a valid URL.").optional().or(z.literal("")),
+  job_link: z.string().min(1, "Job link is required.").url("Enter a valid URL."),
 });
 type FormValues = z.infer<typeof formSchema>;
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
+}
+
+/** The sheet write runs in the background after Save; wait briefly for it and say how it went. */
+async function reportRecording(saved: Analysis): Promise<void> {
+  let current = saved;
+  for (let i = 0; i < 15 && current.record_status === "PENDING"; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    current = await analysisApi.get(saved.id).catch(() => current);
+  }
+  const label = `${saved.company_name} / ${saved.position_name}`;
+  if (current.record_status === "SUCCESS") {
+    toast.success(`Saved and recorded in the Google Sheet: ${label}`);
+  } else if (current.record_status === "SKIPPED") {
+    toast.info(`Saved: ${label}. No Google Sheet is set for this profile, so it wasn't recorded.`);
+  } else if (current.record_status === "FAILED") {
+    toast.error(`Saved, but recording to the Google Sheet failed: ${current.record_error}`, {
+      duration: 30000,
+      action: {
+        label: "Retry",
+        onClick: async () => {
+          try {
+            const retried = await analysisApi.retry(saved.id);
+            if (retried.record_status === "SUCCESS") toast.success("Recorded in the Google Sheet");
+            else toast.error(`Still couldn't record it: ${retried.record_error}`);
+          } catch (error) {
+            toast.error(errorMessage(error, "Retry failed"));
+          }
+        },
+      },
+    });
+  } else {
+    toast.info(`Saved: ${label}. Still recording to the Google Sheet...`);
+  }
 }
 
 const ANALYZE_STEPS = [
@@ -157,15 +190,12 @@ export function ResumeSelector() {
         company_name: values.company_name,
         position_name: values.position_name,
         job_description: values.job_description,
-        job_link: values.job_link || null,
+        job_link: values.job_link,
         profile_id: profileId,
       });
       setAnalyzeOutput(output);
       if (isDismatched(output.result)) {
         toast.warning(`Dismatched JD: none of ${profile?.name ?? "this profile"}'s resumes fit this job.`);
-      }
-      if (output.duplicate_warning) {
-        toast.warning(output.duplicate_reason ?? "This job was already analyzed.");
       }
       scrollToResult();
     } catch (error) {
@@ -183,7 +213,7 @@ export function ResumeSelector() {
         company_name: values.company_name,
         position_name: values.position_name,
         job_description: values.job_description,
-        job_link: values.job_link || null,
+        job_link: values.job_link,
         profile_id: profileId,
         // The resume is the AI's pick; there's nothing to choose by hand.
         selected_resume_type_id: analyzeOutput.result.recommended_resume_type_id ?? null,
@@ -194,8 +224,8 @@ export function ResumeSelector() {
         latency_ms: analyzeOutput.latency_ms,
       });
     },
-    onSuccess: async () => {
-      toast.success("Analysis saved");
+    onSuccess: async (saved) => {
+      void reportRecording(saved);
       setAnalyzeOutput(null);
       reset();
       await queryClient.invalidateQueries({ queryKey: ["analyses"] });
@@ -259,7 +289,7 @@ export function ResumeSelector() {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="job_link">Job link (optional)</Label>
+              <Label htmlFor="job_link">Job link</Label>
               <Input id="job_link" placeholder="https://..." {...register("job_link")} />
               {errors.job_link && (
                 <p className="text-sm text-destructive">{errors.job_link.message}</p>
@@ -287,7 +317,7 @@ export function ResumeSelector() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={save.isPending}
+                  disabled={save.isPending || isDismatched(analyzeOutput.result)}
                   onClick={handleSubmit((values) => save.mutate(values))}
                 >
                   {save.isPending ? "Saving..." : "Save"}
@@ -305,8 +335,14 @@ export function ResumeSelector() {
           <div className="flex flex-col gap-2">
             <ResultCard result={analyzeOutput.result} resumeName={resumeName} />
             <p className="text-xs text-muted-foreground">
-              Not saved yet: click <span className="font-medium">Save</span> to add it to History
-              below.
+              {isDismatched(analyzeOutput.result) ? (
+                "A Dismatched JD can't be saved."
+              ) : (
+                <>
+                  Not saved yet: click <span className="font-medium">Save</span> to record it in
+                  the profile&apos;s Google Sheet.
+                </>
+              )}
             </p>
           </div>
         ) : analyzeError ? (

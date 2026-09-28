@@ -24,17 +24,13 @@ async def analyze(
 ) -> AnalyzeResponse:
     client_id = scope_client_id(user)
     assert client_id is not None
-    outcome, duplicate_reason = await service.analyze(
-        db, user=user, client_id=client_id, payload=payload
-    )
+    outcome = await service.analyze(db, user=user, client_id=client_id, payload=payload)
     return AnalyzeResponse(
         result=outcome.result,
         model=outcome.model,
         prompt_version=outcome.prompt_version,
         tokens=outcome.tokens,
         latency_ms=outcome.latency_ms,
-        duplicate_warning=duplicate_reason is not None,
-        duplicate_reason=duplicate_reason,
     )
 
 

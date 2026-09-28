@@ -22,6 +22,9 @@ def fake_google(*, title: str = "Job Tracker", tabs: list[str] | None = None):
         writer: MagicMock = writer_cls.return_value
         writer.get_spreadsheet.return_value = (title, tabs or ["Sheet1", "Job Log"])
         writer.sheet_context.return_value = (5, "America/Chicago", "en_US")
+        writer.recorded_jobs.return_value = [
+            (2, ["Turing", "Software Engineer", "https://turing.example/se"])
+        ]
         writer.list_spreadsheets.return_value = [
             {"id": "sheet123", "name": "Job Tracker"},
             {"id": "sheet456", "name": "Budget"},
@@ -36,6 +39,13 @@ async def _client_with_profile(
     headers = await login_headers(client, email=email)
     profile_resp = await client.post("/api/v1/profiles", headers=headers, json={"name": "P1"})
     return headers, profile_resp.json()["id"]
+
+
+async def _resume_type(client: AsyncClient, headers: dict, profile_id: str) -> str:
+    resp = await client.post(
+        "/api/v1/resume-types", headers=headers, json={"profile_id": profile_id, "name": "Python"}
+    )
+    return resp.json()["id"]
 
 
 def _config(profile_id: str, **overrides) -> dict:
@@ -200,18 +210,21 @@ async def test_analysis_save_records_to_sheet_in_background(
         )
     assert saved.status_code == 200, saved.text
 
+    rt_id = await _resume_type(client, headers, profile_id)
     payload = {
         "company_name": "Acme",
         "position_name": "Backend Eng",
         "job_description": "Some JD",
+        "job_link": "https://acme.example/jobs/1",
         "profile_id": profile_id,
+        "selected_resume_type_id": rt_id,
         "result": {
             "main_backend_skill": "Python",
             "backend_framework": "Django",
             "secondary_skills": [],
             "seniority": "senior",
             "key_requirements": [],
-            "recommended_resume_type_id": None,
+            "recommended_resume_type_id": rt_id,
             "confidence": 0.9,
             "reasoning": "Match",
         },
@@ -230,6 +243,7 @@ async def test_analysis_save_records_to_sheet_in_background(
     spreadsheet_id, tab, row = writer.append_row.call_args.args
     assert (spreadsheet_id, tab) == ("sheet123", "Sheet1")
     assert row[0] == 5 and row[1:3] == ["Acme", "Backend Eng"] and row[4] == "Applied"
+    assert row[5] == "Python"
 
     final = await client.get(f"/api/v1/analyses/{analysis_id}", headers=headers)
     assert final.json()["record_status"] == "SUCCESS"
@@ -239,6 +253,7 @@ async def test_retry_requires_failed_status(client: AsyncClient, db_session: Asy
     headers, profile_id = await _client_with_profile(
         client, db_session, email="retryflow@example.com"
     )
+    rt_id = await _resume_type(client, headers, profile_id)
     save_resp = await client.post(
         "/api/v1/analyses",
         headers=headers,
@@ -246,6 +261,7 @@ async def test_retry_requires_failed_status(client: AsyncClient, db_session: Asy
             "company_name": "Acme",
             "position_name": "Backend Eng",
             "job_description": "Some JD",
+            "job_link": "https://acme.example/jobs/2",
             "profile_id": profile_id,
             "result": {
                 "main_backend_skill": "Python",
@@ -253,7 +269,7 @@ async def test_retry_requires_failed_status(client: AsyncClient, db_session: Asy
                 "secondary_skills": [],
                 "seniority": "unknown",
                 "key_requirements": [],
-                "recommended_resume_type_id": None,
+                "recommended_resume_type_id": rt_id,
                 "confidence": 0.5,
                 "reasoning": "N/A",
             },
@@ -267,3 +283,40 @@ async def test_retry_requires_failed_status(client: AsyncClient, db_session: Asy
     retry_resp = await client.post(f"/api/v1/analyses/{analysis_id}/retry", headers=headers)
     assert retry_resp.status_code == 400
     assert retry_resp.json()["error"]["code"] == "not_retryable"
+
+
+async def test_job_already_in_the_sheet_is_rejected(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    headers, profile_id = await _client_with_profile(
+        client, db_session, email="sheetdup@example.com"
+    )
+    rt_id = await _resume_type(client, headers, profile_id)
+    with fake_google():
+        await client.put(
+            f"/api/v1/sheet-configs/{profile_id}",
+            headers=headers,
+            json={"spreadsheet_id": "sheet123", "sheet_name": "Sheet1"},
+        )
+        resp = await client.post(
+            "/api/v1/analyses",
+            headers=headers,
+            json={
+                "company_name": "TURING",
+                "position_name": "software engineer",
+                "job_description": "Some JD",
+                "job_link": "https://turing.example/a-new-link",
+                "profile_id": profile_id,
+                "result": {
+                    "main_backend_skill": "Python",
+                    "seniority": "senior",
+                    "recommended_resume_type_id": rt_id,
+                    "confidence": 0.9,
+                    "reasoning": "Match",
+                },
+                "model": "gpt-4o-mini",
+                "prompt_version": "v",
+            },
+        )
+    assert resp.status_code == 409
+    assert "row 2 of Job Tracker > Sheet1" in resp.json()["error"]["message"]

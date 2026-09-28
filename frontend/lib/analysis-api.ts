@@ -52,7 +52,7 @@ export type AnalyzeInput = {
   company_name: string;
   position_name: string;
   job_description: string;
-  job_link?: string | null;
+  job_link: string;
   /** Required for a client; ignored for a bidder (always their assigned profile). */
   profile_id?: string | null;
 };
@@ -63,8 +63,6 @@ export type AnalyzeOutput = {
   prompt_version: string;
   tokens: number | null;
   latency_ms: number;
-  duplicate_warning: boolean;
-  duplicate_reason: string | null;
 };
 
 export type SaveAnalysisInput = AnalyzeInput & {
@@ -76,25 +74,9 @@ export type SaveAnalysisInput = AnalyzeInput & {
   latency_ms?: number | null;
 };
 
-export type AnalysisListParams = {
-  search?: string;
-  profile_id?: string;
-  date_from?: string;
-  date_to?: string;
-};
-
 export const analysisApi = {
   analyze: (input: AnalyzeInput) => api.post<AnalyzeOutput>("/analyses/analyze", input),
   save: (input: SaveAnalysisInput) => api.post<Analysis>("/analyses", input),
-  list: (params?: AnalysisListParams) => {
-    const query = new URLSearchParams();
-    if (params?.search) query.set("search", params.search);
-    if (params?.profile_id) query.set("profile_id", params.profile_id);
-    if (params?.date_from) query.set("date_from", params.date_from);
-    if (params?.date_to) query.set("date_to", params.date_to);
-    const qs = query.toString();
-    return api.get<Analysis[]>(`/analyses${qs ? `?${qs}` : ""}`);
-  },
   get: (id: string) => api.get<Analysis>(`/analyses/${id}`),
   retry: (id: string) => api.post<Analysis>(`/analyses/${id}/retry`),
 };

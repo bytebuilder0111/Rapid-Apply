@@ -117,6 +117,19 @@ class SheetsWriter:
         numbers = [int(float(r[0])) for r in column_a if r and _is_number(r[0])]
         return (max(numbers) + 1 if numbers else 1), props["timeZone"], props["locale"]
 
+    def recorded_jobs(self, spreadsheet_id: str, sheet_name: str) -> list[tuple[int, list[str]]]:
+        """(sheet row number, [company, position, job link]) for every data row, read from
+        columns B-D of the bid-sheet layout (row 1 is the header)."""
+        rows = (
+            self._sheets()
+            .spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=_a1(sheet_name, "B2:D"))
+            .execute()
+            .get("values", [])
+        )
+        return [(i + 2, (row + ["", "", ""])[:3]) for i, row in enumerate(rows) if any(row)]
+
     def append_row(self, spreadsheet_id: str, sheet_name: str, row: list) -> None:
         # USER_ENTERED so the link becomes clickable and the date a real date; callers escape
         # free text so it can't be read as a formula.

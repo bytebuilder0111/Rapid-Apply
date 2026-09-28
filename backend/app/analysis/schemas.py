@@ -11,7 +11,7 @@ class AnalyzeRequest(BaseModel):
     company_name: str = Field(min_length=1, max_length=255)
     position_name: str = Field(min_length=1, max_length=255)
     job_description: str = Field(min_length=1)
-    job_link: str | None = None
+    job_link: str = Field(min_length=1, max_length=2048)
     # Whose resumes to compare against. Required for a client; a bidder always uses their
     # assigned profile, so it's ignored for them.
     profile_id: UUID | None = None
@@ -23,15 +23,13 @@ class AnalyzeResponse(BaseModel):
     prompt_version: str
     tokens: int | None
     latency_ms: int
-    duplicate_warning: bool
-    duplicate_reason: str | None = None
 
 
 class SaveAnalysisRequest(BaseModel):
     company_name: str = Field(min_length=1, max_length=255)
     position_name: str = Field(min_length=1, max_length=255)
     job_description: str = Field(min_length=1)
-    job_link: str | None = None
+    job_link: str = Field(min_length=1, max_length=2048)
     profile_id: UUID | None = None
     selected_resume_type_id: UUID | None = None
     result: AnalysisResult
