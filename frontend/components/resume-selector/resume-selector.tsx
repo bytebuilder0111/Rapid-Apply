@@ -14,13 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { analysisApi, type AnalyzeOutput } from "@/lib/analysis-api";
 import { ApiError } from "@/lib/api";
@@ -107,7 +100,6 @@ export function ResumeSelector() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const isBidder = user?.role === "BIDDER";
   const [chosenProfileId, setChosenProfileId] = useState<string>("");
-  const [selectedResumeTypeId, setSelectedResumeTypeId] = useState<string>("");
   const resultRef = useRef<HTMLDivElement>(null);
 
   const scrollToResult = () =>
@@ -138,13 +130,11 @@ export function ResumeSelector() {
     queryFn: () => resumeTypesApi.list({ profileId }),
     enabled: Boolean(profileId),
   });
-  const usableResumeTypes = (resumeTypes ?? []).filter((r) => r.is_active);
 
   const changeProfile = (id: string) => {
     setChosenProfileId(id);
     setAnalyzeOutput(null);
     setAnalyzeError(null);
-    setSelectedResumeTypeId("");
   };
 
   const {
@@ -171,7 +161,6 @@ export function ResumeSelector() {
         profile_id: profileId,
       });
       setAnalyzeOutput(output);
-      setSelectedResumeTypeId(output.result.recommended_resume_type_id ?? "");
       if (isDismatched(output.result)) {
         toast.warning(`Dismatched JD: none of ${profile?.name ?? "this profile"}'s resumes fit this job.`);
       }
@@ -196,7 +185,8 @@ export function ResumeSelector() {
         job_description: values.job_description,
         job_link: values.job_link || null,
         profile_id: profileId,
-        selected_resume_type_id: selectedResumeTypeId || null,
+        // The resume is the AI's pick; there's nothing to choose by hand.
+        selected_resume_type_id: analyzeOutput.result.recommended_resume_type_id ?? null,
         result: analyzeOutput.result,
         model: analyzeOutput.model,
         prompt_version: analyzeOutput.prompt_version,
@@ -207,7 +197,6 @@ export function ResumeSelector() {
     onSuccess: async () => {
       toast.success("Analysis saved");
       setAnalyzeOutput(null);
-      setSelectedResumeTypeId("");
       reset();
       await queryClient.invalidateQueries({ queryKey: ["analyses"] });
     },
@@ -287,25 +276,6 @@ export function ResumeSelector() {
               {errors.job_description && (
                 <p className="text-sm text-destructive">{errors.job_description.message}</p>
               )}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label>Resume to use</Label>
-              <Select
-                value={selectedResumeTypeId}
-                onValueChange={(v) => setSelectedResumeTypeId(v ?? "")}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Pre-filled with the best fit after Analyze" />
-                </SelectTrigger>
-                <SelectContent>
-                  {usableResumeTypes.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="flex gap-2">

@@ -163,8 +163,7 @@ export function AnalysisHistory() {
                 <TableHead>Company</TableHead>
                 <TableHead>Position</TableHead>
                 <TableHead>Profile</TableHead>
-                <TableHead>Best fit</TableHead>
-                <TableHead>Resume used</TableHead>
+                <TableHead>Best-fit resume</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -172,7 +171,7 @@ export function AnalysisHistory() {
             <TableBody>
               {data.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     No analyses yet.
                   </TableCell>
                 </TableRow>
@@ -193,11 +192,6 @@ export function AnalysisHistory() {
                     ) : (
                       "—"
                     )}
-                  </TableCell>
-                  <TableCell>
-                    {a.selected_resume_type_id
-                      ? (resumeNameById.get(a.selected_resume_type_id) ?? "—")
-                      : "—"}
                   </TableCell>
                   <TableCell>
                     <Badge variant={STATUS_VARIANT[a.record_status]}>{a.record_status}</Badge>
