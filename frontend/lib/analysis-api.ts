@@ -1,6 +1,8 @@
 import { api } from "@/lib/api";
 
-export type Seniority = "junior" | "mid" | "senior" | "lead" | "unknown";
+export type Seniority = "intern" | "junior" | "mid" | "senior" | "lead" | "unknown";
+export type WorkArrangement = "remote" | "hybrid" | "onsite" | "unknown";
+export type RemoteLocation = "us" | "worldwide" | "non_us" | "unknown";
 
 export type RoleType = "backend" | "fullstack" | "mobile" | "frontend" | "data" | "devops" | "other";
 
@@ -8,6 +10,13 @@ export type AnalysisResult = {
   /** Absent on analyses saved before resume-based matching. */
   jd_summary?: string | null;
   role_type?: RoleType | null;
+  work_arrangement?: WorkArrangement | null;
+  remote_location?: RemoteLocation | null;
+  relocation_required?: boolean | null;
+  /** The JD's own location wording, e.g. "Remote (US)". */
+  location_note?: string | null;
+  /** Why the job was skipped (junior/intern, or not US remote); such jobs can't be saved. */
+  skip_reason?: string | null;
   /** Languages/frameworks the JD explicitly names (verified against the JD text). */
   jd_core_stack?: string[] | null;
   /** The job's core language/tech as the JD names it. */

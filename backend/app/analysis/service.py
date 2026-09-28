@@ -120,6 +120,12 @@ async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: Ana
 async def save_analysis(
     db: AsyncSession, *, user: User, client_id: UUID, payload: SaveAnalysisRequest
 ) -> AnalysisOut:
+    if payload.result.skip_reason:
+        raise AppError(
+            "skipped_jd",
+            f"This job was skipped, so it can't be saved: {payload.result.skip_reason}",
+            400,
+        )
     if not payload.result.recommended_resume_type_id:
         raise AppError(
             "dismatched_jd", "A Dismatched JD has no matching resume, so it can't be saved.", 400

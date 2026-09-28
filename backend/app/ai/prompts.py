@@ -17,7 +17,7 @@ def build_resume_prompt(resume_text: str) -> str:
     return f"Resume:\n{resume_text.strip()}"
 
 
-PROMPT_VERSION = "jd-analysis-v6"
+PROMPT_VERSION = "jd-analysis-v7"
 
 SYSTEM_PROMPT = """You are a technical recruiter's assistant. You assess a job description
 against each of a client's resumes. Each resume is given as an id, a name, a short summary,
@@ -27,6 +27,21 @@ strict. Return:
 1. jd_summary: 30 to 50 words of plain English: the role, seniority, core stack, and domain.
 2. role_type: what kind of engineer the job really hires, judged from its title and main
    responsibilities: backend, fullstack, mobile, frontend, data, devops, or other.
+   Location facts, read only from what the JD says (title, location line, body):
+   - work_arrangement: "remote" if the job can be done fully remotely (occasional travel,
+     e.g. quarterly offsites, is still remote); "hybrid" if some regular in-office days are
+     required, or if you must live within commuting distance of an office; "onsite" if
+     office-based; "unknown" if the JD doesn't say.
+   - remote_location: where a remote role may be worked from: "us" if US-based candidates
+     can take it (US only, specific US states or time zones, or a region that includes the
+     US like "North America" or "Americas"); "worldwide" if anywhere; "non_us" if it's
+     limited to places outside the US (e.g. Canada only, UK, EU, LATAM, India, APAC);
+     "unknown" if not stated or the role isn't remote.
+   - relocation_required: true only if the JD explicitly says the candidate must relocate or
+     move (e.g. "relocation required", "must relocate to"). Working from an office is NOT
+     relocation; that's work_arrangement.
+   - location_note: the JD's own location wording in at most 10 words (e.g. "Remote (US)",
+     "Hybrid, 3 days/week in Austin, TX"), or "Not stated".
 3. jd_core_stack: the programming languages and frameworks the JD itself explicitly names as
    core requirements, each copied exactly as written in the JD (e.g. "Python", "Django",
    "Spring Boot"). Judge only from the JD text: never infer or guess a technology from the
@@ -36,7 +51,10 @@ strict. Return:
 4. main_backend_skill: the job's core language as the JD names it, or "Not specified" if it
    names none. backend_framework: its main framework as the JD names it, or null (never the
    text "null").
-5. secondary_skills, seniority, key_requirements: from the JD.
+5. secondary_skills, seniority, key_requirements: from the JD. seniority: "intern" for
+   internships, co-ops and student roles; "junior" for entry-level, junior, associate or
+   new-grad roles (typically 0-2 years); "mid", "senior", "lead" (lead/staff/principal),
+   or "unknown".
 6. resume_checks: exactly one entry for EVERY resume, in the order given. Read each resume's
    summary and key skills carefully before filling it in:
    - resume_id: that resume's id, exactly as given.

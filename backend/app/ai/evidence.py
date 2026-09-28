@@ -71,6 +71,27 @@ def _names(resumes: list[dict]) -> str:
     return ", ".join(r["name"] for r in resumes)
 
 
+def skip_reason(response: AnalysisResponse) -> str | None:
+    """The client only takes senior-enough, US-remote jobs. A reason to skip the job, or None.
+    A JD that doesn't state its location isn't skipped (the UI flags it instead)."""
+    where = response.location_note.strip()
+    detail = f" ({where})" if where and where.lower() != "not stated" else ""
+    if response.seniority == "intern":
+        return "Internship role."
+    if response.seniority == "junior":
+        return "Junior / entry-level role."
+    # Office-based first: the model tends to also flag "must be in Austin" as relocation.
+    if response.work_arrangement == "hybrid":
+        return f"Hybrid role, not fully remote{detail}."
+    if response.work_arrangement == "onsite":
+        return f"On-site role, not remote{detail}."
+    if response.relocation_required:
+        return f"Requires relocation{detail}."
+    if response.work_arrangement == "remote" and response.remote_location == "non_us":
+        return f"Remote only outside the US{detail}."
+    return None
+
+
 def decide_match(
     response: AnalysisResponse, job_description: str, resumes: list[dict]
 ) -> AnalysisResult:
@@ -103,7 +124,10 @@ def decide_match(
         return max(options, key=lambda c: (c[2].fit, len(c[1])))
 
     recommended, confidence = None, 0.0
-    if not core:
+    skip = skip_reason(response)
+    if skip:
+        reasoning = f"Skipped: {skip}"
+    elif not core:
         reasoning = (
             "This JD doesn't name a specific programming language or framework, so none of "
             "your resumes can be confirmed as a match."
@@ -131,6 +155,11 @@ def decide_match(
     return AnalysisResult(
         jd_summary=response.jd_summary,
         role_type=response.role_type,
+        work_arrangement=response.work_arrangement,
+        remote_location=response.remote_location,
+        relocation_required=response.relocation_required,
+        location_note=response.location_note,
+        skip_reason=skip,
         jd_core_stack=core,
         main_backend_skill=main_skill,
         backend_framework=framework,

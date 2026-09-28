@@ -194,7 +194,9 @@ export function ResumeSelector() {
         profile_id: profileId,
       });
       setAnalyzeOutput(output);
-      if (isDismatched(output.result)) {
+      if (output.result.skip_reason) {
+        toast.warning(`Skipped: ${output.result.skip_reason}`);
+      } else if (isDismatched(output.result)) {
         toast.warning(`Dismatched JD: none of ${profile?.name ?? "this profile"}'s resumes fit this job.`);
       }
       scrollToResult();
@@ -335,7 +337,9 @@ export function ResumeSelector() {
           <div className="flex flex-col gap-2">
             <ResultCard result={analyzeOutput.result} resumeName={resumeName} />
             <p className="text-xs text-muted-foreground">
-              {isDismatched(analyzeOutput.result) ? (
+              {analyzeOutput.result.skip_reason ? (
+                "A skipped job can't be saved."
+              ) : isDismatched(analyzeOutput.result) ? (
                 "A Dismatched JD can't be saved."
               ) : (
                 <>

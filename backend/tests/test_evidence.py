@@ -39,6 +39,10 @@ def _response(*, core: list[str], checks: list[ResumeCheck], **overrides) -> Ana
     base = {
         "jd_summary": "s",
         "role_type": "backend",
+        "work_arrangement": "remote",
+        "remote_location": "us",
+        "relocation_required": False,
+        "location_note": "Remote (US)",
         "jd_core_stack": core,
         "main_backend_skill": core[0] if core else "Not specified",
         "backend_framework": None,
@@ -150,3 +154,56 @@ def test_multi_word_framework_needs_every_word_in_the_jd() -> None:
     out = decide_match(response, jd, PROFILES)
     assert out.jd_core_stack == ["Java"]
     assert out.recommended_resume_type_id == "java"
+
+
+JAVA_JD = "Senior Java Engineer: Spring Boot microservices."
+
+
+def _java_candidate(**overrides) -> AnalysisResponse:
+    return _response(core=["Java"], checks=_all_checks(java=_check("java")), **overrides)
+
+
+def test_us_remote_senior_job_is_not_skipped() -> None:
+    out = decide_match(_java_candidate(), JAVA_JD, PROFILES)
+    assert out.skip_reason is None
+    assert out.recommended_resume_type_id == "java"
+
+
+def test_worldwide_remote_and_unstated_location_are_not_skipped() -> None:
+    worldwide = _java_candidate(remote_location="worldwide", location_note="Remote, anywhere")
+    unstated = _java_candidate(
+        work_arrangement="unknown", remote_location="unknown", location_note="Not stated"
+    )
+    for response in (worldwide, unstated):
+        assert decide_match(response, JAVA_JD, PROFILES).recommended_resume_type_id == "java"
+
+
+def test_junior_and_intern_roles_are_skipped() -> None:
+    junior = decide_match(_java_candidate(seniority="junior"), JAVA_JD, PROFILES)
+    intern = decide_match(_java_candidate(seniority="intern"), JAVA_JD, PROFILES)
+    assert junior.skip_reason == "Junior / entry-level role."
+    assert intern.skip_reason == "Internship role."
+    assert junior.recommended_resume_type_id is None and intern.recommended_resume_type_id is None
+
+
+def test_hybrid_onsite_relocation_and_non_us_remote_are_skipped() -> None:
+    cases = {
+        "Hybrid role, not fully remote (Hybrid, 3 days in Austin).": _java_candidate(
+            work_arrangement="hybrid", location_note="Hybrid, 3 days in Austin"
+        ),
+        "On-site role, not remote (New York, NY).": _java_candidate(
+            work_arrangement="onsite", location_note="New York, NY"
+        ),
+        "Requires relocation (Remote after relocating to Toronto).": _java_candidate(
+            relocation_required=True, location_note="Remote after relocating to Toronto"
+        ),
+        "Remote only outside the US (Remote - Canada).": _java_candidate(
+            remote_location="non_us", location_note="Remote - Canada"
+        ),
+    }
+    for expected, response in cases.items():
+        out = decide_match(response, JAVA_JD, PROFILES)
+        assert out.skip_reason == expected
+        assert out.reasoning == f"Skipped: {expected}"
+        assert out.recommended_resume_type_id is None
+        assert out.confidence == 0.0

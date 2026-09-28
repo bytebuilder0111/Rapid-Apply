@@ -15,12 +15,32 @@ const ROLE_LABEL: Record<RoleType, string> = {
 };
 
 const SENIORITY_LABEL: Record<AnalysisResult["seniority"], string> = {
+  intern: "Intern",
   junior: "Junior",
   mid: "Mid-level",
   senior: "Senior",
   lead: "Lead",
   unknown: "Seniority unknown",
 };
+
+function locationLabel(result: AnalysisResult): string | null {
+  switch (result.work_arrangement) {
+    case "remote":
+      return result.remote_location === "us"
+        ? "Remote · US"
+        : result.remote_location === "worldwide"
+          ? "Remote · anywhere"
+          : result.remote_location === "non_us"
+            ? "Remote · outside US"
+            : "Remote";
+    case "hybrid":
+      return "Hybrid";
+    case "onsite":
+      return "On-site";
+    default:
+      return null;
+  }
+}
 
 /** True when the AI compared this JD against resume summaries and none fit. */
 export function isDismatched(result: AnalysisResult): boolean {
@@ -56,6 +76,14 @@ export function ResultCard({
               </span>
             </p>
             <p className="mt-1 text-sm text-muted-foreground">{result.reasoning}</p>
+          </div>
+        ) : result.skip_reason ? (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3">
+            <p className="flex items-center gap-2 text-lg font-semibold text-destructive">
+              <TriangleAlert className="size-5" />
+              Skipped
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{result.skip_reason}</p>
           </div>
         ) : isDismatched(result) ? (
           <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3">
@@ -107,7 +135,16 @@ export function ResultCard({
               <Badge variant="outline">{ROLE_LABEL[result.role_type]} role</Badge>
             )}
             <Badge variant="outline">{SENIORITY_LABEL[result.seniority]}</Badge>
+            {locationLabel(result) && <Badge variant="outline">{locationLabel(result)}</Badge>}
+            {result.location_note && result.location_note.toLowerCase() !== "not stated" && (
+              <span className="text-sm text-muted-foreground">{result.location_note}</span>
+            )}
           </div>
+          {result.work_arrangement === "unknown" && !result.skip_reason && (
+            <p className="mt-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-2 py-1 text-sm text-yellow-700 dark:text-yellow-300">
+              Location not stated in the JD. Check it&apos;s a US remote role before applying.
+            </p>
+          )}
         </div>
 
         {result.secondary_skills.length > 0 && (

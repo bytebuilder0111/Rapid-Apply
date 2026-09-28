@@ -2,8 +2,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Seniority = Literal["junior", "mid", "senior", "lead", "unknown"]
+Seniority = Literal["intern", "junior", "mid", "senior", "lead", "unknown"]
 RoleType = Literal["backend", "fullstack", "mobile", "frontend", "data", "devops", "other"]
+WorkArrangement = Literal["remote", "hybrid", "onsite", "unknown"]
+# Where a remote role may be worked from: "us" (US, or regions that include it such as
+# North America), "worldwide", "non_us" (only other countries/regions), or "unknown".
+RemoteLocation = Literal["us", "worldwide", "non_us", "unknown"]
 
 
 class ResumeSummary(BaseModel):
@@ -17,6 +21,13 @@ class AnalysisResult(BaseModel):
 
     jd_summary: str | None = None
     role_type: RoleType | None = None
+    work_arrangement: WorkArrangement | None = None
+    remote_location: RemoteLocation | None = None
+    relocation_required: bool | None = None
+    # Short quote of the JD's location wording, e.g. "Remote (US)" or "Hybrid, 3 days in NYC".
+    location_note: str | None = None
+    # Set when the job is skipped for seniority or location rules (see app/ai/evidence.py).
+    skip_reason: str | None = None
     # Languages/frameworks the JD explicitly names, verified against the JD text in
     # app/ai/service.py. None on analyses saved before this field existed.
     jd_core_stack: list[str] | None = None
@@ -46,6 +57,10 @@ class AnalysisResponse(BaseModel):
 
     jd_summary: str
     role_type: RoleType
+    work_arrangement: WorkArrangement
+    remote_location: RemoteLocation
+    relocation_required: bool
+    location_note: str
     jd_core_stack: list[str]
     main_backend_skill: str
     backend_framework: str | None
