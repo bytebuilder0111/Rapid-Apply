@@ -1,0 +1,42 @@
+# Render Blueprint for the API (see docs/DEPLOY.md). The frontend is deployed on Vercel.
+services:
+  - type: web
+    name: jd-analyzer-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    # Migrations run on every start (Render's pre-deploy step isn't available on the free plan);
+    # alembic only applies what's new.
+    startCommand: >-
+      uv run alembic upgrade head &&
+      uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DEFAULT_AI_MODEL
+        value: gpt-4o-mini
+      - key: ADMIN_USERNAME
+        value: Admin
+      # Secrets and URLs: set these in the Render dashboard (sync: false = not stored here).
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

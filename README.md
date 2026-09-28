@@ -23,3 +23,5 @@ pnpm dev
 Or from the repo root: `make api` / `make web`.
 
 Health check: http://localhost:8000/health
+
+Deploying (Render + Vercel + Neon): see `docs/DEPLOY.md`.

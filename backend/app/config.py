@@ -16,5 +16,23 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     cors_origins: str = "http://localhost:3000"
 
+    @property
+    def is_production(self) -> bool:
+        # Deployed = the frontend is served over https from a real host.
+        return self.frontend_url.startswith("https://") and "localhost" not in self.frontend_url
+
+    def check_production_secrets(self) -> None:
+        """Refuses to run a deployed API on development defaults."""
+        if not self.is_production:
+            return
+        problems = []
+        if self.jwt_secret == "change-me-in-production" or len(self.jwt_secret) < 32:
+            problems.append("JWT_SECRET must be a random string of 32+ characters")
+        if not self.encryption_key:
+            problems.append("ENCRYPTION_KEY is missing")
+        if problems:
+            raise RuntimeError("Unsafe production config: " + "; ".join(problems))
+
 
 settings = Settings()
+settings.check_production_secrets()
