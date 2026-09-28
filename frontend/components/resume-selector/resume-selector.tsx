@@ -322,7 +322,7 @@ export function ResumeSelector() {
                   disabled={save.isPending || isDismatched(analyzeOutput.result)}
                   onClick={handleSubmit((values) => save.mutate(values))}
                 >
-                  {save.isPending ? "Saving..." : "Save"}
+                  {save.isPending ? "Recording..." : "Record to Sheet"}
                 </Button>
               )}
             </div>
@@ -343,7 +343,7 @@ export function ResumeSelector() {
                 "A Dismatched JD can't be saved."
               ) : (
                 <>
-                  Not saved yet: click <span className="font-medium">Save</span> to record it in
+                  Not recorded yet: click <span className="font-medium">Record to Sheet</span> to add it to
                   the profile&apos;s Google Sheet.
                 </>
               )}
