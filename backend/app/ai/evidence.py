@@ -6,8 +6,9 @@ from the JD text and the resume's own summary/skills:
 - it has at least one of the languages the JD names (a shared framework like React isn't
   enough when the JD also names Python),
 - the model judged it the same kind of role, unless it covers 75%+ of the stack anyway.
-Among those, the resume with the most of the named stack wins (languages count double); JDs
-often list alternatives ("Swift, Kotlin or Java"), so no minimum share is required.
+Among those, the resume with the most of the named stack wins (languages count double).
+Languages a JD lists as options ("at least one language, such as Java, Python or C#") form one
+requirement that any of them meets.
 Otherwise the result is a "Dismatched JD" with a specific reason."""
 
 import re
@@ -117,6 +118,30 @@ def verified_core_stack(claimed: list[str], job_description: str) -> list[str]:
     return verified
 
 
+# Wording that turns a list of languages into options rather than requirements.
+_ALTERNATIVE_MARKERS = re.compile(r"\b(or|such as|one of|any of|either|e\.g|for example)\b")
+
+
+def language_options(languages: list[str], job_description: str) -> list[list[str]]:
+    """Groups of the JD's languages that it offers as alternatives: 2+ of them named in one
+    sentence that says "or", "such as", "one of", etc. Sentences that share a language merge."""
+    groups: list[set[str]] = []
+    # Lines are separate bullets, unless a line ends mid-list ("Java, Python, C#,\nTypeScript").
+    text = re.sub(r",[ \t]*\r?\n", ", ", job_description)
+    for sentence in re.split(r"[\n;]|(?<=[.!?])\s", text):
+        if not _ALTERNATIVE_MARKERS.search(sentence.lower()):
+            continue
+        tokens = _tokens(sentence)
+        named = {lang for lang in languages if _named_in(lang, tokens)}
+        if len(named) < 2:
+            continue
+        for group in [g for g in groups if g & named]:
+            named |= group
+            groups.remove(group)
+        groups.append(named)
+    return [[lang for lang in languages if lang in g] for g in groups]
+
+
 def _names(resumes: list[dict]) -> str:
     return ", ".join(r["name"] for r in resumes)
 
@@ -157,18 +182,28 @@ def decide_match(
 
     checks = {c.resume_id: c for c in response.resume_checks}
     languages = [t for t in core if _is_language(t)]
-    total = sum(_weight(t) for t in core)
+    options = language_options(languages, job_description)
+    in_options = {lang for group in options for lang in group}
+    # What the JD asks for: each option group counts once, like a single language.
+    requirements = options + [[t] for t in core if t not in in_options]
+    total = sum(_weight(group[0]) for group in requirements)
 
     # Everything below is measured from the resume text itself; the model's per-resume check
     # only breaks ties and vetoes a different kind of role when coverage is partial.
-    scored = []  # (resume, overlap, coverage, has_language)
+    scored = []  # (resume, overlap, coverage, has_language, missing)
     for p in resumes:
         resume_tokens = _resume_tokens(p)
         overlap = [t for t in core if _named_in(t, resume_tokens)]
         if overlap:
-            coverage = sum(_weight(t) for t in overlap) / total
+            met = [g for g in requirements if any(t in overlap for t in g)]
+            coverage = sum(_weight(g[0]) for g in met) / total
             has_language = not languages or any(t in overlap for t in languages)
-            scored.append((p, overlap, coverage, has_language))
+            missing = [
+                g[0] if len(g) == 1 else f"one of {', '.join(g)}"
+                for g in requirements
+                if g not in met
+            ]
+            scored.append((p, overlap, coverage, has_language, missing))
     with_language = [s for s in scored if s[3]]
 
     def fit(p: dict) -> float:
@@ -180,8 +215,10 @@ def decide_match(
 
     candidates = [s for s in with_language if role_ok(s[0], s[2])]
 
-    def best_of(options):
-        return max(options, key=lambda s: (s[2], fit(s[0])))
+    def best_of(pool):
+        # Most of the stack first; then more of the named terms (e.g. two of the languages a
+        # JD accepts beats one), and only then the model's fit.
+        return max(pool, key=lambda s: (s[2], len(s[1]), fit(s[0])))
 
     recommended, confidence = None, 0.0
     skip = skip_reason(response)
@@ -196,7 +233,7 @@ def decide_match(
     elif not scored:
         reasoning = f"None of your resumes include the stack this JD names ({stack})."
     elif not with_language:
-        best, overlap, _, _ = best_of(scored)
+        best, overlap, *_ = best_of(scored)
         reasoning = (
             f"No resume has the language this JD needs ({', '.join(languages)}). The closest, "
             f"{best['name']}, only shares {', '.join(overlap)}."
@@ -209,13 +246,15 @@ def decide_match(
             f"but for a different kind of role than this {response.role_type} job."
         )
     else:
-        best, overlap, coverage, _ = best_of(candidates)
+        best, overlap, coverage, _, missing = best_of(candidates)
         recommended = best["id"]
         confidence = round(0.7 * coverage + 0.3 * fit(best), 2)
-        missing = [t for t in core if t not in overlap]
         reasoning = f"{best['name']} has {', '.join(overlap)} from the stack this JD names" + (
             f"; missing {', '.join(missing)}." if missing else " (all of it)."
         )
+        for group in options:
+            if any(t in overlap for t in group):
+                reasoning += f" The JD accepts any one of {', '.join(group)}."
 
     return AnalysisResult(
         jd_summary=response.jd_summary,

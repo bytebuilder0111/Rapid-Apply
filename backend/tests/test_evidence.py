@@ -294,3 +294,41 @@ def test_fallback_keeps_a_stackless_jd_empty() -> None:
     jd = STACKLESS_JD + " We go live weekly and our network is on .NET-free infra."
     out = decide_match(_response(core=[], checks=_all_checks()), jd, PROFILES)
     assert out.jd_core_stack == []
+
+
+# The Avum SDET JD: the languages are options, and the model called it a different kind of role.
+SDET_JD = """Software Development Engineer in Test (SDET), fully remote.
+Proficiency in at least one object-oriented programming language, such as Java, Python, C#,
+TypeScript, or JavaScript. Experience with the Page Object Model and CI/CD pipelines."""
+
+
+def test_languages_listed_as_options_are_met_by_any_one() -> None:
+    response = _response(
+        role_type="other",
+        core=["Java", "Python", "C#", "TypeScript"],
+        checks=_all_checks(java=_check("java", same_role=False, fit=0.6)),
+    )
+    out = decide_match(response, SDET_JD, PROFILES)
+    assert out.recommended_resume_type_id == "java"
+    assert out.reasoning == (
+        "Java Backend has Java from the stack this JD names (all of it). "
+        "The JD accepts any one of Java, Python, C#, TypeScript."
+    )
+
+
+def test_options_do_not_excuse_a_separately_required_language() -> None:
+    # "Python" is required on its own; only the front-end languages are options.
+    jd = "Python backend is required. Front end in TypeScript or JavaScript."
+    response = _response(core=["Python", "TypeScript", "JavaScript"], checks=_all_checks())
+    out = decide_match(response, jd, PROFILES)
+    assert out.recommended_resume_type_id is None
+    assert "No resume has the language" not in out.reasoning
+
+
+def test_languages_joined_by_and_are_all_required() -> None:
+    jd = "You will write Java and Python services every day."
+    response = _response(
+        core=["Java", "Python"], checks=_all_checks(java=_check("java", same_role=False))
+    )
+    out = decide_match(response, jd, PROFILES)
+    assert out.recommended_resume_type_id is None  # half the stack, and a different role
