@@ -3,8 +3,9 @@
 The model assesses every resume but never picks the winner; its per-resume checks proved
 unreliable (e.g. claiming a Java resume "matches Python"). A resume can win only if, measured
 from the JD text and the resume's own summary/skills:
-- it has at least one of the languages the JD names (a shared framework like React isn't
-  enough when the JD also names Python),
+- its backend language is one the JD names: a resume is judged by its backend, so a
+  Python resume that also lists TypeScript for React front ends doesn't fit a TypeScript/Node
+  job, and a shared framework like React is never enough,
 - the model judged it the same kind of role, unless it covers 75%+ of the stack anyway.
 Among those, the resume with the most of the named stack wins (languages count double).
 Languages a JD lists as options ("at least one language, such as Java, Python or C#") form one
@@ -86,6 +87,34 @@ def _is_language(term: str) -> bool:
 
 def _weight(term: str) -> int:
     return 2 if _is_language(term) else 1
+
+
+# Language tokens grouped by backend: TypeScript, JavaScript and Node are one backend.
+_JS_FAMILY = "node"
+_FAMILY = {
+    "typescript": _JS_FAMILY, "javascript": _JS_FAMILY, "node": _JS_FAMILY, "c#": "dotnet",
+    "net": "dotnet", "objective": "swift",
+}  # fmt: skip
+
+
+def _families(tokens: set[str]) -> set[str]:
+    return {_FAMILY.get(t, t) for t in tokens & _LANGUAGE_TOKENS}
+
+
+def _backend(families: set[str]) -> set[str]:
+    """TypeScript/JavaScript next to a server-side language is front-end work, so the backend
+    is the other language; on its own it means a Node backend."""
+    return (families - {_JS_FAMILY}) or families
+
+
+def jd_backend(languages: list[str]) -> set[str]:
+    return _backend(_families(set().union(*(_tokens(t) for t in languages))))
+
+
+def resume_backend(resume: dict) -> set[str]:
+    """What a resume is for. Resume types are named after their backend ("Python", "Node",
+    "GoLang"), so the name decides; otherwise the languages in its skills and summary."""
+    return _families(_tokens(resume["name"])) or _backend(_families(_resume_tokens(resume)))
 
 
 def _clean(value: str | None) -> str | None:
@@ -182,6 +211,8 @@ def decide_match(
 
     checks = {c.resume_id: c for c in response.resume_checks}
     languages = [t for t in core if _is_language(t)]
+    backend = jd_backend(languages)
+    backend_names = [t for t in languages if _families(_tokens(t)) & backend]
     options = language_options(languages, job_description)
     in_options = {lang for group in options for lang in group}
     # What the JD asks for: each option group counts once, like a single language.
@@ -190,21 +221,21 @@ def decide_match(
 
     # Everything below is measured from the resume text itself; the model's per-resume check
     # only breaks ties and vetoes a different kind of role when coverage is partial.
-    scored = []  # (resume, overlap, coverage, has_language, missing)
+    scored = []  # (resume, overlap, coverage, same_backend, missing)
     for p in resumes:
         resume_tokens = _resume_tokens(p)
         overlap = [t for t in core if _named_in(t, resume_tokens)]
         if overlap:
             met = [g for g in requirements if any(t in overlap for t in g)]
             coverage = sum(_weight(g[0]) for g in met) / total
-            has_language = not languages or any(t in overlap for t in languages)
+            same_backend = not backend or bool(resume_backend(p) & backend)
             missing = [
                 g[0] if len(g) == 1 else f"one of {', '.join(g)}"
                 for g in requirements
                 if g not in met
             ]
-            scored.append((p, overlap, coverage, has_language, missing))
-    with_language = [s for s in scored if s[3]]
+            scored.append((p, overlap, coverage, same_backend, missing))
+    with_backend = [s for s in scored if s[3]]
 
     def fit(p: dict) -> float:
         return checks[p["id"]].fit if p["id"] in checks else 0.0
@@ -213,7 +244,7 @@ def decide_match(
         same = p["id"] in checks and checks[p["id"]].same_role
         return same or coverage >= STRONG_COVERAGE
 
-    candidates = [s for s in with_language if role_ok(s[0], s[2])]
+    candidates = [s for s in with_backend if role_ok(s[0], s[2])]
 
     def best_of(pool):
         # Most of the stack first; then more of the named terms (e.g. two of the languages a
@@ -232,15 +263,15 @@ def decide_match(
         )
     elif not scored:
         reasoning = f"None of your resumes include the stack this JD names ({stack})."
-    elif not with_language:
+    elif not with_backend:
         best, overlap, *_ = best_of(scored)
         reasoning = (
-            f"No resume has the language this JD needs ({', '.join(languages)}). The closest, "
-            f"{best['name']}, only shares {', '.join(overlap)}."
+            f"No resume has the backend language this JD needs ({', '.join(backend_names)}). "
+            f"The closest, {best['name']}, only shares {', '.join(overlap)}."
         )
     elif not candidates:
-        names = _names([s[0] for s in with_language])
-        verb = "has" if len(with_language) == 1 else "have"
+        names = _names([s[0] for s in with_backend])
+        verb = "has" if len(with_backend) == 1 else "have"
         reasoning = (
             f"{names} {verb} part of the named stack ({stack}), "
             f"but for a different kind of role than this {response.role_type} job."

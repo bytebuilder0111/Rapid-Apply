@@ -188,7 +188,7 @@ def test_only_a_framework_in_common_is_declined() -> None:
         profiles,
     )
     assert out.recommended_resume_type_id is None
-    assert out.reasoning.startswith("No resume has the language this JD needs (Python).")
+    assert out.reasoning.startswith("No resume has the backend language this JD needs (Python).")
 
 
 def test_java_does_not_match_javascript() -> None:
@@ -321,8 +321,9 @@ def test_options_do_not_excuse_a_separately_required_language() -> None:
     jd = "Python backend is required. Front end in TypeScript or JavaScript."
     response = _response(core=["Python", "TypeScript", "JavaScript"], checks=_all_checks())
     out = decide_match(response, jd, PROFILES)
+    # Node has TypeScript, but for a Python backend that's only the front end.
     assert out.recommended_resume_type_id is None
-    assert "No resume has the language" not in out.reasoning
+    assert out.reasoning.startswith("No resume has the backend language this JD needs (Python).")
 
 
 def test_languages_joined_by_and_are_all_required() -> None:
@@ -332,3 +333,51 @@ def test_languages_joined_by_and_are_all_required() -> None:
     )
     out = decide_match(response, jd, PROFILES)
     assert out.recommended_resume_type_id is None  # half the stack, and a different role
+
+
+# Lakeyth's real resumes: Python and C# also list TypeScript, for their React front ends.
+LAKEYTH = [
+    {
+        "id": "python",
+        "name": "Python",
+        "summary": "Specializing in Python, TypeScript, and AWS; backend services and React.",
+        "skills": ["Python", "TypeScript", "AWS", "Django", "FastAPI", "React", "PostgreSQL"],
+    },
+    {
+        "id": "node",
+        "name": "Node",
+        "summary": "Specializing in Node.js, TypeScript, and AWS; backend services and React.",
+        "skills": ["Node.js", "TypeScript", "React", "AWS", "PostgreSQL", "GraphQL"],
+    },
+    {
+        "id": "csharp",
+        "name": "C#",
+        "summary": "ASP.NET Core and React. Proficient in C#, TypeScript, and SQL.",
+        "skills": ["C#", "ASP.NET Core", "React", "TypeScript", "SQL Server", "Azure"],
+    },
+    {
+        "id": "go",
+        "name": "GoLang",
+        "summary": "Go and distributed systems. PostgreSQL, Kafka, and AWS.",
+        "skills": ["Go", "PostgreSQL", "Kafka", "AWS"],
+    },
+]
+
+
+def test_typescript_only_job_is_a_node_backend() -> None:
+    # Tru Treasury: "built primarily with TypeScript, Next.js, PostgreSQL, and AWS".
+    jd = "Senior Full Stack Developer. Our stack: TypeScript, Next.js, React, PostgreSQL, AWS."
+    checks = [_check(p["id"], fit=0.9 if p["id"] == "python" else 0.7) for p in LAKEYTH]
+    out = decide_match(
+        _response(role_type="fullstack", core=["TypeScript", "Next.js"], checks=checks),
+        jd,
+        LAKEYTH,
+    )
+    assert out.recommended_resume_type_id == "node"
+
+
+def test_a_resume_is_judged_by_its_named_backend() -> None:
+    # "GoLang" names the backend even though the resume text says "Go".
+    jd = "Backend engineer writing Golang services."
+    out = decide_match(_response(core=["Golang"], checks=[_check("go")]), jd, LAKEYTH)
+    assert out.recommended_resume_type_id == "go"
