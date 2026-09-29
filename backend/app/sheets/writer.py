@@ -43,9 +43,16 @@ def _a1(sheet_name: str, cells: str) -> str:
     return "'" + sheet_name.replace("'", "''") + "'!" + cells
 
 
-class SheetsWriter:
-    def __init__(self, refresh_token: str) -> None:
-        self._credentials = Credentials(
+# Credentials per refresh token, kept for the life of the process so the access token
+# (valid ~1 hour, refreshed automatically when it expires) isn't fetched again on every call:
+# each fetch is another round trip to Google.
+_credentials_cache: dict[str, Credentials] = {}
+
+
+def _credentials(refresh_token: str) -> Credentials:
+    credentials = _credentials_cache.get(refresh_token)
+    if credentials is None:
+        credentials = Credentials(
             token=None,
             refresh_token=refresh_token,
             token_uri=TOKEN_URI,
@@ -53,6 +60,13 @@ class SheetsWriter:
             client_secret=settings.google_client_secret,
             scopes=SCOPES,
         )
+        _credentials_cache[refresh_token] = credentials
+    return credentials
+
+
+class SheetsWriter:
+    def __init__(self, refresh_token: str) -> None:
+        self._credentials = _credentials(refresh_token)
 
     def _sheets(self):
         return build("sheets", "v4", credentials=self._credentials, cache_discovery=False)
@@ -100,24 +114,32 @@ class SheetsWriter:
             ).execute()
 
     def sheet_context(self, spreadsheet_id: str, sheet_name: str) -> tuple[int, str, str]:
-        """(next "No" value, spreadsheet time zone, spreadsheet locale)."""
-        service = self._sheets()
-        props = (
-            service.spreadsheets()
-            .get(spreadsheetId=spreadsheet_id, fields="properties(timeZone,locale)")
-            .execute()["properties"]
-        )
-        column_a = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=spreadsheet_id, range=_a1(sheet_name, "A:A"))
+        """(next "No" value, spreadsheet time zone, spreadsheet locale), in one request: the
+        spreadsheet's settings together with column A's values."""
+        result = (
+            self._sheets()
+            .spreadsheets()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                ranges=[_a1(sheet_name, "A:A")],
+                includeGridData=True,
+                fields="properties(timeZone,locale),sheets(data(rowData(values(effectiveValue))))",
+            )
             .execute()
-            .get("values", [])
         )
-        if not column_a:
+        props = result["properties"]
+        data = result.get("sheets", [{}])[0].get("data", [{}])[0]
+        cells = [
+            (row.get("values") or [{}])[0].get("effectiveValue", {})
+            for row in data.get("rowData", [])
+        ]
+        if not any(cells):
             # A tab emptied since it was set up: put the header back before the first row.
             self.ensure_header(spreadsheet_id, sheet_name)
-        numbers = [int(float(r[0])) for r in column_a if r and _is_number(r[0])]
+        numbers = [int(c["numberValue"]) for c in cells if "numberValue" in c]
+        numbers += [
+            int(float(c["stringValue"])) for c in cells if _is_number(c.get("stringValue", ""))
+        ]
         return (max(numbers) + 1 if numbers else 1), props["timeZone"], props["locale"]
 
     def recorded_jobs(self, spreadsheet_id: str, sheet_name: str) -> list[tuple[int, list[str]]]:

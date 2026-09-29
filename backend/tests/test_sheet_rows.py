@@ -78,18 +78,30 @@ def test_very_long_job_description_fits_in_a_cell() -> None:
     assert len(row[7]) == 49_000
 
 
+def _column_a(*cells: dict) -> dict:
+    return {
+        "properties": {"timeZone": "America/Chicago", "locale": "en_US"},
+        "sheets": [{"data": [{"rowData": [{"values": [c]} if c else {} for c in cells]}]}],
+    }
+
+
 def test_next_number_continues_after_the_highest_no() -> None:
     writer = SheetsWriter.__new__(SheetsWriter)
     service = MagicMock()
-    spreadsheets = service.spreadsheets.return_value
-    spreadsheets.get.return_value.execute.return_value = {
-        "properties": {"timeZone": "America/Chicago", "locale": "en_US"}
-    }
-    spreadsheets.values.return_value.get.return_value.execute.return_value = {
-        "values": [["No"], ["1"], ["7"], [], ["3"]]
-    }
+    get = service.spreadsheets.return_value.get
     writer._sheets = lambda: service
-    assert writer.sheet_context("s1", "Bids") == (8, "America/Chicago", "en_US")
+    header = {"effectiveValue": {"stringValue": "No"}}
 
-    spreadsheets.values.return_value.get.return_value.execute.return_value = {"values": [["No"]]}
+    # Numbers come back as numbers, or as text when typed with a leading apostrophe.
+    get.return_value.execute.return_value = _column_a(
+        header,
+        {"effectiveValue": {"numberValue": 1}},
+        {"effectiveValue": {"stringValue": "7"}},
+        None,
+        {"effectiveValue": {"numberValue": 3}},
+    )
+    assert writer.sheet_context("s1", "Bids") == (8, "America/Chicago", "en_US")
+    assert get.call_count == 1  # settings and column A in one request
+
+    get.return_value.execute.return_value = _column_a(header)
     assert writer.sheet_context("s1", "Bids")[0] == 1
