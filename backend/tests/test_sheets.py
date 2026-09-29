@@ -277,11 +277,10 @@ async def test_retry_requires_failed_status(client: AsyncClient, db_session: Asy
     assert retry_resp.json()["error"]["code"] == "not_retryable"
 
 
-async def test_job_already_in_the_sheet_is_rejected(
+async def test_job_already_in_the_sheet_is_reported_by_the_pre_check(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     headers, profile_id = await _client_with_profile(client, db_session, username="sheetdup")
-    rt_id = await _resume_type(client, headers, profile_id)
     with fake_google():
         await client.put(
             f"/api/v1/sheet-configs/{profile_id}",
@@ -289,24 +288,14 @@ async def test_job_already_in_the_sheet_is_rejected(
             json={"spreadsheet_id": "sheet123", "sheet_name": "Sheet1"},
         )
         resp = await client.post(
-            "/api/v1/analyses",
+            "/api/v1/analyses/check-duplicate",
             headers=headers,
             json={
                 "company_name": "TURING",
                 "position_name": "software engineer",
-                "job_description": "Some JD",
                 "job_link": "https://turing.example/a-new-link",
                 "profile_id": profile_id,
-                "result": {
-                    "main_backend_skill": "Python",
-                    "seniority": "senior",
-                    "recommended_resume_type_id": rt_id,
-                    "confidence": 0.9,
-                    "reasoning": "Match",
-                },
-                "model": "gpt-4o-mini",
-                "prompt_version": "v",
             },
         )
-    assert resp.status_code == 409
-    assert "row 2 of Job Tracker > Sheet1" in resp.json()["error"]["message"]
+    assert resp.status_code == 200
+    assert "row 2 of Job Tracker > Sheet1" in resp.json()["duplicate"]

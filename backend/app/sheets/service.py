@@ -379,7 +379,7 @@ async def record_analysis(analysis_id: UUID) -> None:
         try:
             refresh_token = await google_service.get_decrypted_refresh_token(db, analysis.client_id)
             writer = SheetsWriter(refresh_token)
-            await asyncio.to_thread(writer.ensure_header, config.spreadsheet_id, config.sheet_name)
+            # sheet_context also restores the header if the tab was emptied since setup.
             number, time_zone, locale = await asyncio.to_thread(
                 writer.sheet_context, config.spreadsheet_id, config.sheet_name
             )

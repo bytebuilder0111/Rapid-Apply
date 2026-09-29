@@ -60,10 +60,17 @@ async def _resumes_context(db: AsyncSession, profile_id: UUID) -> list[dict]:
 
 
 async def _find_duplicate(
-    db: AsyncSession, *, user: User, client_id: UUID, profile: Profile, payload
+    db: AsyncSession,
+    *,
+    user: User,
+    client_id: UUID,
+    profile: Profile,
+    payload,
+    include_sheet: bool = True,
 ) -> str | None:
     """Checks the job against this profile's saved analyses, imported history, then its
-    bid sheet."""
+    bid sheet. Reading the sheet is the slow part (a Google call), so only the pre-check
+    does it; Analyze and Save re-check the database."""
     rows = await db.execute(
         select(
             Analysis.company_name, Analysis.position_name, Analysis.job_link, Analysis.created_at
@@ -97,7 +104,8 @@ async def _find_duplicate(
         )
         for company, position, job_link, applied, source in history.all()
     ]
-    entries += await recorded_jobs(db, client_id=client_id, profile_id=profile.id, user=user)
+    if include_sheet:
+        entries += await recorded_jobs(db, client_id=client_id, profile_id=profile.id, user=user)
     return find_duplicate(
         entries,
         company=payload.company_name,
@@ -110,7 +118,7 @@ async def _reject_duplicate(
     db: AsyncSession, *, user: User, client_id: UUID, profile: Profile, payload
 ) -> None:
     reason = await _find_duplicate(
-        db, user=user, client_id=client_id, profile=profile, payload=payload
+        db, user=user, client_id=client_id, profile=profile, payload=payload, include_sheet=False
     )
     if reason:
         raise AppError("duplicate_job", f"Duplicate job: {reason}", 409)
@@ -145,7 +153,8 @@ async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: Ana
             f"{profile.name} has no uploaded resumes yet. Upload one under Resume Types first.",
             400,
         )
-    # Before the AI call, so a duplicate costs nothing.
+    # Before the AI call, so a duplicate costs nothing. The sheet itself was read by the
+    # pre-check (check_duplicate) moments ago.
     await _reject_duplicate(db, user=user, client_id=client_id, profile=profile, payload=payload)
     return await analyze_job_description(
         api_key=api_key,
@@ -171,7 +180,7 @@ async def save_analysis(
     profile = await _resolve_profile(
         db, user=user, client_id=client_id, profile_id=payload.profile_id
     )
-    # Checked again at save: the sheet may have changed since Analyze.
+    # Checked again at save, e.g. another bidder saved the same job since Analyze.
     await _reject_duplicate(db, user=user, client_id=client_id, profile=profile, payload=payload)
     selected_resume_type_id = payload.selected_resume_type_id
     if selected_resume_type_id is not None:

@@ -114,6 +114,9 @@ class SheetsWriter:
             .execute()
             .get("values", [])
         )
+        if not column_a:
+            # A tab emptied since it was set up: put the header back before the first row.
+            self.ensure_header(spreadsheet_id, sheet_name)
         numbers = [int(float(r[0])) for r in column_a if r and _is_number(r[0])]
         return (max(numbers) + 1 if numbers else 1), props["timeZone"], props["locale"]
 

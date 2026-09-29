@@ -32,20 +32,26 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-/** The sheet write runs in the background after Save; wait briefly for it and say how it went. */
+/** The sheet write runs in the background after Save: show it in progress right away, then
+ * replace that message with how it went. */
 async function reportRecording(saved: Analysis): Promise<void> {
+  const label = `${saved.company_name} / ${saved.position_name}`;
+  // One toast, updated in place.
+  const id = toast.loading(`Recording to the Google Sheet: ${label}...`);
   let current = saved;
-  for (let i = 0; i < 15 && current.record_status === "PENDING"; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  for (let i = 0; i < 40 && current.record_status === "PENDING"; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
     current = await analysisApi.get(saved.id).catch(() => current);
   }
-  const label = `${saved.company_name} / ${saved.position_name}`;
   if (current.record_status === "SUCCESS") {
-    toast.success(`Saved and recorded in the Google Sheet: ${label}`);
+    toast.success(`Recorded in the Google Sheet: ${label}`, { id });
   } else if (current.record_status === "SKIPPED") {
-    toast.info(`Saved: ${label}. No Google Sheet is set for this profile, so it wasn't recorded.`);
+    toast.info(`Saved: ${label}. No Google Sheet is set for this profile, so it wasn't recorded.`, {
+      id,
+    });
   } else if (current.record_status === "FAILED") {
     toast.error(`Saved, but recording to the Google Sheet failed: ${current.record_error}`, {
+      id,
       duration: 30000,
       action: {
         label: "Retry",
@@ -61,7 +67,7 @@ async function reportRecording(saved: Analysis): Promise<void> {
       },
     });
   } else {
-    toast.info(`Saved: ${label}. Still recording to the Google Sheet...`);
+    toast.info(`Saved: ${label}. Still recording to the Google Sheet...`, { id });
   }
 }
 
