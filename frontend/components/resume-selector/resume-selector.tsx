@@ -115,12 +115,14 @@ function AnalyzingPanel({ phase }: { phase: AnalyzePhase }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Loader2 className="size-4 animate-spin" />
-          Analyzing...
+          {phase === "checking" ? "Checking for duplicates..." : "Analyzing..."}
         </CardTitle>
         <CardDescription>
           {wakingUp
             ? `${Math.floor(elapsed)}s · the server is waking up after being idle, this can take up to a minute`
-            : `${Math.floor(elapsed)}s elapsed · usually takes 5–20 seconds`}
+            : phase === "checking"
+              ? `${Math.floor(elapsed)}s · the AI starts only if this job is new`
+              : `${Math.floor(elapsed)}s elapsed · usually takes 5–20 seconds`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -358,7 +360,7 @@ export function ResumeSelector() {
             <div className="flex gap-2">
               <Button type="submit" disabled={isAnalyzing}>
                 {isAnalyzing && <Loader2 className="size-4 animate-spin" />}
-                {isAnalyzing ? "Analyzing..." : "Analyze"}
+                {!isAnalyzing ? "Analyze" : phase === "checking" ? "Checking duplicates..." : "Analyzing..."}
               </Button>
               {analyzeOutput && (
                 <Button
