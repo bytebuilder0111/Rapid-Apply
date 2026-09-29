@@ -17,6 +17,18 @@ class AnalyzeRequest(BaseModel):
     profile_id: UUID | None = None
 
 
+class DuplicateCheckRequest(BaseModel):
+    company_name: str = Field(min_length=1, max_length=255)
+    position_name: str = Field(min_length=1, max_length=255)
+    job_link: str = Field(min_length=1, max_length=2048)
+    profile_id: UUID | None = None
+
+
+class DuplicateCheckResponse(BaseModel):
+    # Where the job was already applied to, e.g. "row 12 of Bids > Sheet1"; None if it's new.
+    duplicate: str | None
+
+
 class AnalyzeResponse(BaseModel):
     result: AnalysisResult
     model: str

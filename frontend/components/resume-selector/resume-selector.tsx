@@ -65,26 +65,44 @@ async function reportRecording(saved: Analysis): Promise<void> {
   }
 }
 
-const ANALYZE_STEPS = [
-  { label: "Sending job description", untilSec: 1 },
-  { label: "AI is reading the job description", untilSec: 4 },
-  { label: "Summarizing the job description", untilSec: 8 },
+// Seconds into the AI call; the AI's own progress isn't observable, so these are estimates.
+const AI_STEPS = [
+  { label: "AI is reading the job description", untilSec: 3 },
+  { label: "Summarizing the job description", untilSec: 7 },
   { label: "Comparing with your resumes", untilSec: Infinity },
 ];
+const STEP_LABELS = ["Checking for duplicates", ...AI_STEPS.map((step) => step.label)];
 const EXPECTED_SECONDS = 15;
+// A duplicate check normally takes ~1s; much longer means the free server is waking up.
+const SLOW_CHECK_SECONDS = 5;
 
-function AnalyzingPanel() {
-  const [elapsed, setElapsed] = useState(0);
+type AnalyzePhase = "checking" | "analyzing";
+
+function AnalyzingPanel({ phase }: { phase: AnalyzePhase }) {
+  const [started] = useState(() => Date.now());
+  const [aiStarted, setAiStarted] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const started = Date.now();
-    const id = setInterval(() => setElapsed((Date.now() - started) / 1000), 200);
+    const id = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(id);
   }, []);
 
-  const activeIndex = ANALYZE_STEPS.findIndex((step) => elapsed < step.untilSec);
-  // Real progress isn't observable from one OpenAI call; ease toward 95% so it never looks stuck or done early.
-  const percent = Math.min(95, Math.round((1 - Math.exp(-elapsed / (EXPECTED_SECONDS / 2))) * 100));
+  useEffect(() => {
+    if (phase === "analyzing") setAiStarted((t) => t ?? Date.now());
+  }, [phase]);
+
+  const elapsed = (now - started) / 1000;
+  const aiElapsed = aiStarted ? Math.max(0, (now - aiStarted) / 1000) : 0;
+  // Step 0 is real (the duplicate check); the AI steps follow the estimates above.
+  const activeIndex =
+    phase === "checking" ? 0 : 1 + AI_STEPS.findIndex((step) => aiElapsed < step.untilSec);
+  // Ease toward 95% so it never looks stuck or done early.
+  const percent =
+    phase === "checking"
+      ? 5
+      : Math.min(95, 10 + Math.round((1 - Math.exp(-aiElapsed / (EXPECTED_SECONDS / 2))) * 85));
+  const wakingUp = phase === "checking" && elapsed > SLOW_CHECK_SECONDS;
 
   return (
     <Card>
@@ -94,7 +112,9 @@ function AnalyzingPanel() {
           Analyzing...
         </CardTitle>
         <CardDescription>
-          {Math.floor(elapsed)}s elapsed · usually takes 5–20 seconds
+          {wakingUp
+            ? `${Math.floor(elapsed)}s · the server is waking up after being idle, this can take up to a minute`
+            : `${Math.floor(elapsed)}s elapsed · usually takes 5–20 seconds`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -105,9 +125,9 @@ function AnalyzingPanel() {
           />
         </div>
         <ul className="flex flex-col gap-2 text-sm">
-          {ANALYZE_STEPS.map((step, i) => (
+          {STEP_LABELS.map((label, i) => (
             <li
-              key={step.label}
+              key={label}
               className={i > activeIndex ? "flex items-center gap-2 text-muted-foreground" : "flex items-center gap-2"}
             >
               {i < activeIndex ? (
@@ -117,7 +137,7 @@ function AnalyzingPanel() {
               ) : (
                 <Circle className="size-4" />
               )}
-              {step.label}
+              {label}
             </li>
           ))}
         </ul>
@@ -131,6 +151,8 @@ export function ResumeSelector() {
   const queryClient = useQueryClient();
   const [analyzeOutput, setAnalyzeOutput] = useState<AnalyzeOutput | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
+  const [phase, setPhase] = useState<AnalyzePhase>("checking");
   const isBidder = user?.role === "BIDDER";
   const [chosenProfileId, setChosenProfileId] = useState<string>("");
   const resultRef = useRef<HTMLDivElement>(null);
@@ -168,6 +190,7 @@ export function ResumeSelector() {
     setChosenProfileId(id);
     setAnalyzeOutput(null);
     setAnalyzeError(null);
+    setDuplicateOf(null);
   };
 
   const {
@@ -184,8 +207,24 @@ export function ResumeSelector() {
     }
     setAnalyzeOutput(null);
     setAnalyzeError(null);
+    setDuplicateOf(null);
+    setPhase("checking");
     scrollToResult();
     try {
+      // Duplicates are caught here, in about a second, before any AI time is spent.
+      const { duplicate } = await analysisApi.checkDuplicate({
+        company_name: values.company_name,
+        position_name: values.position_name,
+        job_link: values.job_link,
+        profile_id: profileId,
+      });
+      if (duplicate) {
+        setDuplicateOf(duplicate);
+        toast.error(`Duplicate job: ${duplicate}`);
+        scrollToResult();
+        return;
+      }
+      setPhase("analyzing");
       const output = await analysisApi.analyze({
         company_name: values.company_name,
         position_name: values.position_name,
@@ -332,7 +371,17 @@ export function ResumeSelector() {
 
       <div ref={resultRef} className="scroll-mt-6 lg:sticky lg:top-6 lg:self-start">
         {isAnalyzing ? (
-          <AnalyzingPanel />
+          <AnalyzingPanel phase={phase} />
+        ) : duplicateOf ? (
+          <Card className="border-destructive/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <TriangleAlert className="size-4" />
+                Duplicate job, not analyzed
+              </CardTitle>
+              <CardDescription>{duplicateOf}</CardDescription>
+            </CardHeader>
+          </Card>
         ) : analyzeOutput ? (
           <div className="flex flex-col gap-2">
             <ResultCard result={analyzeOutput.result} resumeName={resumeName} />

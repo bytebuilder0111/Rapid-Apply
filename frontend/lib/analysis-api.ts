@@ -66,6 +66,11 @@ export type AnalyzeInput = {
   profile_id?: string | null;
 };
 
+export type DuplicateCheckInput = Pick<
+  AnalyzeInput,
+  "company_name" | "position_name" | "job_link" | "profile_id"
+>;
+
 export type AnalyzeOutput = {
   result: AnalysisResult;
   model: string;
@@ -84,6 +89,9 @@ export type SaveAnalysisInput = AnalyzeInput & {
 };
 
 export const analysisApi = {
+  /** `duplicate` says where the job was already applied to; null when it's new. */
+  checkDuplicate: (input: DuplicateCheckInput) =>
+    api.post<{ duplicate: string | null }>("/analyses/check-duplicate", input),
   analyze: (input: AnalyzeInput) => api.post<AnalyzeOutput>("/analyses/analyze", input),
   save: (input: SaveAnalysisInput) => api.post<Analysis>("/analyses", input),
   get: (id: string) => api.get<Analysis>(`/analyses/${id}`),

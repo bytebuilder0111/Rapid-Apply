@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.service import analyze_job_description
 from app.analysis.duplicates import Entry, find_duplicate
 from app.analysis.models import Analysis, JobHistory
-from app.analysis.schemas import AnalysisOut, AnalyzeRequest, SaveAnalysisRequest
+from app.analysis.schemas import (
+    AnalysisOut,
+    AnalyzeRequest,
+    DuplicateCheckRequest,
+    SaveAnalysisRequest,
+)
 from app.errors import AppError
 from app.integrations.service import get_decrypted_key_for_client, get_settings_row
 from app.models import Role, User
@@ -109,6 +114,19 @@ async def _reject_duplicate(
     )
     if reason:
         raise AppError("duplicate_job", f"Duplicate job: {reason}", 409)
+
+
+async def check_duplicate(
+    db: AsyncSession, *, user: User, client_id: UUID, payload: DuplicateCheckRequest
+) -> str | None:
+    """The quick pre-check the Resume Selector runs before Analyze, so a duplicate is reported
+    in a second instead of after the AI call."""
+    profile = await _resolve_profile(
+        db, user=user, client_id=client_id, profile_id=payload.profile_id
+    )
+    return await _find_duplicate(
+        db, user=user, client_id=client_id, profile=profile, payload=payload
+    )
 
 
 async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: AnalyzeRequest):

@@ -192,6 +192,23 @@ async def test_analyze_and_save_flow(client: AsyncClient, db_session: AsyncSessi
     assert same_title.status_code == 409
     analyze.assert_not_called()
 
+    # The Resume Selector's pre-check reports the same thing without analyzing.
+    check_fields = {"company_name", "position_name", "job_link", "profile_id"}
+    dup = await client.post(
+        "/api/v1/analyses/check-duplicate",
+        headers=headers,
+        json={k: v for k, v in jd.items() if k in check_fields},
+    )
+    assert dup.status_code == 200, dup.text
+    assert dup.json()["duplicate"]
+    fresh = await client.post(
+        "/api/v1/analyses/check-duplicate",
+        headers=headers,
+        json={k: v for k, v in jd.items() if k in check_fields}
+        | {"company_name": "New Co", "job_link": "https://new.example/jobs/1"},
+    )
+    assert fresh.json() == {"duplicate": None}
+
     list_resp = await client.get(
         "/api/v1/analyses", headers=headers, params={"profile_id": profile_id}
     )

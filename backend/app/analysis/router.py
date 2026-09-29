@@ -6,7 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis import service
 from app.analysis.models import RecordStatus
-from app.analysis.schemas import AnalysisOut, AnalyzeRequest, AnalyzeResponse, SaveAnalysisRequest
+from app.analysis.schemas import (
+    AnalysisOut,
+    AnalyzeRequest,
+    AnalyzeResponse,
+    DuplicateCheckRequest,
+    DuplicateCheckResponse,
+    SaveAnalysisRequest,
+)
 from app.db import get_db
 from app.deps import get_current_user, require_roles, scope_client_id
 from app.errors import AppError
@@ -14,6 +21,18 @@ from app.models import Role, User
 from app.sheets.service import record_analysis
 
 router = APIRouter(dependencies=[Depends(require_roles(Role.CLIENT, Role.BIDDER))])
+
+
+@router.post("/check-duplicate", response_model=DuplicateCheckResponse)
+async def check_duplicate(
+    payload: DuplicateCheckRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DuplicateCheckResponse:
+    client_id = scope_client_id(user)
+    assert client_id is not None
+    reason = await service.check_duplicate(db, user=user, client_id=client_id, payload=payload)
+    return DuplicateCheckResponse(duplicate=reason)
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
