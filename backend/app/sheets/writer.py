@@ -5,6 +5,8 @@ callers, which only depend on list_spreadsheets/get_spreadsheet/ensure_header/
 sheet_context/append_row.
 """
 
+import threading
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -64,16 +66,32 @@ def _credentials(refresh_token: str) -> Credentials:
     return credentials
 
 
+# Built API clients, kept per thread (an httplib2 connection mustn't be shared across
+# threads). Building one and first touching its resources renders docs for every method:
+# ~0.25s of CPU, several seconds on a small server, on every Google call if not reused.
+_thread_clients = threading.local()
+
+
+def _client(api: str, version: str, refresh_token: str):
+    clients = _thread_clients.__dict__.setdefault("clients", {})
+    key = (api, refresh_token)
+    if key not in clients:
+        clients[key] = build(
+            api, version, credentials=_credentials(refresh_token), cache_discovery=False
+        )
+    return clients[key]
+
+
 class SheetsWriter:
     def __init__(self, refresh_token: str) -> None:
-        self._credentials = _credentials(refresh_token)
+        self._refresh_token = refresh_token
 
     def _sheets(self):
-        return build("sheets", "v4", credentials=self._credentials, cache_discovery=False)
+        return _client("sheets", "v4", self._refresh_token)
 
     def list_spreadsheets(self) -> list[dict]:
         """[{"id", "name"}] for the account's spreadsheets, most recently modified first."""
-        drive = build("drive", "v3", credentials=self._credentials, cache_discovery=False)
+        drive = _client("drive", "v3", self._refresh_token)
         result = (
             drive.files()
             .list(
