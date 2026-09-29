@@ -17,7 +17,7 @@ def build_resume_prompt(resume_text: str) -> str:
     return f"Resume:\n{resume_text.strip()}"
 
 
-PROMPT_VERSION = "jd-analysis-v8"
+PROMPT_VERSION = "jd-analysis-v9"
 
 SYSTEM_PROMPT = """You are a technical recruiter's assistant. You assess a job description
 against each of a client's resumes. Each resume is given as an id, a name, a short summary,
@@ -27,7 +27,10 @@ strict. Return:
 1. jd_summary: 30 to 50 words of plain English: the role, seniority, core stack, and domain.
 2. role_type: what kind of engineer the job really hires, judged from its title and main
    responsibilities: backend, fullstack, mobile, frontend, data, devops, or other.
-   Location facts, read only from what the JD says (title, location line, body):
+   Location facts, read only from what the JD says (title, location line, body). Ignore
+   pasted page furniture: application forms, job-alert sign-ups, cookie banners, "other jobs"
+   lists and footers. A "Location (city, state or zip code)" form field there is the visitor's,
+   not the job's.
    - work_arrangement: "remote" if the job can be done fully remotely (occasional travel,
      e.g. quarterly offsites, is still remote), including when remote is one of the options
      offered ("Remote or Hybrid", "Remote/On-site", "open to remote"); "hybrid" if some

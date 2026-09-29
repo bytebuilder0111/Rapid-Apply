@@ -12,7 +12,7 @@ from openai import (
     RateLimitError,
 )
 
-from app.ai.evidence import decide_match
+from app.ai.evidence import decide_match, strip_page_furniture
 from app.ai.prompts import (
     PROMPT_VERSION,
     RESUME_SYSTEM_PROMPT,
@@ -93,6 +93,7 @@ async def analyze_job_description(
     Retries once on invalid JSON or when the model skipped a resume (see docs/SPEC.md).
     """
     all_ids = {r["id"] for r in resumes}
+    job_description = strip_page_furniture(job_description)
     client = AsyncOpenAI(api_key=api_key)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},

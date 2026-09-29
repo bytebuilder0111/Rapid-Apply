@@ -1,4 +1,4 @@
-from app.ai.evidence import decide_match
+from app.ai.evidence import decide_match, strip_page_furniture
 from app.ai.schemas import AnalysisResponse, ResumeCheck
 
 PROFILES = [
@@ -69,11 +69,12 @@ def test_stack_the_jd_never_names_is_dropped_and_declined() -> None:
     )
     out = decide_match(response, STACKLESS_JD, PROFILES)
     assert out.jd_core_stack == []
-    assert out.recommended_resume_type_id is None
-    assert out.confidence == 0.0
     assert out.main_backend_skill == "Not specified"
     assert out.backend_framework is None
-    assert "doesn't name a specific programming language" in out.reasoning
+    # No language named: the closest resume is still picked, with a warning to check.
+    assert out.recommended_resume_type_id == "node"
+    assert out.confidence == 0.45
+    assert out.reasoning.startswith("This JD doesn't name a backend language")
 
 
 def test_generic_tools_never_count_as_core_stack() -> None:
@@ -81,7 +82,7 @@ def test_generic_tools_never_count_as_core_stack() -> None:
     response = _response(core=["CI/CD", "Git"], checks=_all_checks(node=_check("node")))
     out = decide_match(response, STACKLESS_JD, PROFILES)
     assert out.jd_core_stack == []
-    assert out.recommended_resume_type_id is None
+    assert "doesn't name a backend language" in out.reasoning
 
 
 def test_code_finds_the_match_the_model_can_only_assess() -> None:
@@ -194,7 +195,8 @@ def test_only_a_framework_in_common_is_declined() -> None:
 def test_java_does_not_match_javascript() -> None:
     jd = "Backend role: JavaScript services."
     response = _response(core=["JavaScript"], checks=_all_checks(java=_check("java")))
-    assert decide_match(response, jd, PROFILES).recommended_resume_type_id is None
+    # The model liked Java, but only Node (Node.js/TypeScript) is JavaScript.
+    assert decide_match(response, jd, PROFILES).recommended_resume_type_id == "node"
 
 
 def test_spelling_variants_still_match() -> None:
@@ -403,3 +405,36 @@ def test_office_based_with_no_location_stated_is_not_skipped() -> None:
     out = decide_match(response, JAVA_JD, PROFILES)
     assert out.skip_reason is None
     assert out.work_arrangement == "unknown"
+
+
+def test_no_language_named_picks_the_resume_with_most_of_the_jds_tools() -> None:
+    jd = "Senior backend engineer: microservices on Kubernetes and AWS, PostgreSQL, Kafka."
+    checks = [_check(p["id"], fit=0.9 if p["id"] == "python" else 0.6) for p in LAKEYTH]
+    out = decide_match(_response(core=[], checks=checks), jd, LAKEYTH)
+    # GoLang has Kafka, AWS and PostgreSQL; the others have fewer.
+    assert out.recommended_resume_type_id == "go"
+    assert out.reasoning == (
+        "This JD doesn't name a backend language, so check it before applying. GoLang is the "
+        "closest fit, with AWS, Kafka, PostgreSQL from the JD."
+    )
+
+
+def test_node_and_typescript_count_as_javascript() -> None:
+    # Hims & Hers: the only language is "JavaScript frameworks (React, NextJS)".
+    jd = "Backend distributed systems on AWS. Preferred: JavaScript frameworks (React, NextJS)."
+    out = decide_match(
+        _response(core=["JavaScript"], checks=[_check(p["id"]) for p in LAKEYTH]), jd, LAKEYTH
+    )
+    assert out.recommended_resume_type_id == "node"
+
+
+def test_visitor_location_form_field_is_dropped() -> None:
+    # ApplicantPro's job-alert form, pre-filled with the visitor's location.
+    jd = (
+        "Senior Full Stack Developer\nUSA\nOur stack: TypeScript.\n\nSign Up For Job Alerts!\n"
+        "Name\nEmail\nLocation (city, state or zip code)\nBeijing, 11 CN\nAccept Terms"
+    )
+    cleaned = strip_page_furniture(jd)
+    assert "Beijing" not in cleaned
+    assert "Location (city" not in cleaned
+    assert "Our stack: TypeScript." in cleaned and "Accept Terms" in cleaned

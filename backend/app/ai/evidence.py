@@ -73,6 +73,8 @@ _IMPLIED_LANGUAGE = {
     "django": "python", "flask": "python", "fastapi": "python", "spring": "java",
     "rails": "ruby", "laravel": "php", "symfony": "php", "asp": "c#", "nestjs": "node",
     "express": "node", "swiftui": "swift", "ktor": "kotlin", "phoenix": "elixir",
+    # Node.js and TypeScript are JavaScript.
+    "node": "javascript", "typescript": "javascript",
 }  # fmt: skip
 
 
@@ -132,6 +134,32 @@ _DETECTABLE_LANGUAGES = {
 }  # fmt: skip
 
 
+# A job-alert sign-up field that job boards pre-fill with the visitor's own location
+# ("Location (city, state or zip code)" then "Beijing, 11 CN"). Pasted with the JD, the model
+# reads it as the job's location.
+_VISITOR_LOCATION_FIELD = re.compile(
+    r"^\s*location\s*\(\s*city,\s*state,?\s*(or|/)\s*zip(\s*code)?\s*\)\s*\*?\s*$",
+    re.IGNORECASE,
+)
+
+
+def strip_page_furniture(job_description: str) -> str:
+    """Drops pasted form fields that describe the visitor, not the job: the field's label and
+    the value on the next non-empty line."""
+    lines = job_description.splitlines()
+    kept: list[str] = []
+    skip_value = False
+    for line in lines:
+        if _VISITOR_LOCATION_FIELD.match(line):
+            skip_value = True
+            continue
+        if skip_value and line.strip():
+            skip_value = False
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def verified_core_stack(claimed: list[str], job_description: str) -> list[str]:
     """The claimed core technologies that really appear in the JD and aren't generic tools.
     If the model named none, falls back to languages the JD text itself names."""
@@ -169,6 +197,37 @@ def language_options(languages: list[str], job_description: str) -> list[list[st
             groups.remove(group)
         groups.append(named)
     return [[lang for lang in languages if lang in g] for g in groups]
+
+
+def _unnamed_language_pick(
+    resumes: list[dict], jd_tokens: set[str], response: AnalysisResponse
+) -> tuple[dict, list[str]] | None:
+    """For a JD that names no language: the resume with the most of the tools and platforms
+    the JD names (Kubernetes, AWS, PostgreSQL...), among those the model judged the same kind
+    of role if any; the model's fit breaks ties. (resume, shared tools) or None."""
+    checks = {c.resume_id: c for c in response.resume_checks}
+    same_role = [p for p in resumes if p["id"] in checks and checks[p["id"]].same_role]
+    pool = same_role or resumes
+    if not pool:
+        return None
+    jd_tools = jd_tokens & _GENERIC_TOKENS
+
+    def shared(p: dict) -> list[str]:
+        return sorted(jd_tools & _resume_tokens(p))
+
+    def fit(p: dict) -> float:
+        return checks[p["id"]].fit if p["id"] in checks else 0.0
+
+    best = max(pool, key=lambda p: (len(shared(p)), fit(p)))
+    return best, shared(best)
+
+
+# Display names for the shared-tool tokens in reasoning text.
+_TOOL_NAMES = {
+    "aws": "AWS", "gcp": "GCP", "ci": "CI", "cd": "CD", "sql": "SQL", "nosql": "NoSQL",
+    "postgresql": "PostgreSQL", "mysql": "MySQL", "mongodb": "MongoDB", "graphql": "GraphQL",
+    "api": "API", "apis": "APIs", "html": "HTML", "css": "CSS", "oauth": "OAuth", "sso": "SSO",
+}  # fmt: skip
 
 
 def _names(resumes: list[dict]) -> str:
@@ -283,10 +342,23 @@ def decide_match(
     if skip:
         reasoning = f"Skipped: {skip}"
     elif not core:
-        reasoning = (
-            "This JD doesn't name a specific programming language or framework, so none of "
-            "your resumes can be confirmed as a match."
-        )
+        pick = _unnamed_language_pick(resumes, jd_tokens, response)
+        if pick is None:
+            reasoning = "This JD doesn't name a programming language, and no resume fits it."
+        else:
+            best, tools = pick
+            recommended = best["id"]
+            # Lower than any named-stack match: nothing in the JD confirms the language.
+            confidence = round(0.5 * fit(best), 2)
+            names = [_TOOL_NAMES.get(t, t.capitalize()) for t in tools if t not in ("ci", "cd")]
+            if {"ci", "cd"} <= set(tools):
+                names.append("CI/CD")
+            shared = ", ".join(names)
+            reasoning = (
+                "This JD doesn't name a backend language, so check it before applying. "
+                f"{best['name']} is the closest fit"
+                + (f", with {shared} from the JD." if shared else ".")
+            )
     elif not scored:
         reasoning = f"None of your resumes include the stack this JD names ({stack})."
     elif not with_backend:
