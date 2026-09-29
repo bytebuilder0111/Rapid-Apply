@@ -381,3 +381,25 @@ def test_a_resume_is_judged_by_its_named_backend() -> None:
     jd = "Backend engineer writing Golang services."
     out = decide_match(_response(core=["Golang"], checks=[_check("go")]), jd, LAKEYTH)
     assert out.recommended_resume_type_id == "go"
+
+
+def test_remote_offered_as_an_option_is_not_skipped() -> None:
+    # SOSi: "Remote or Hybrid work model", which the model called hybrid.
+    for note in ("Remote or Hybrid work model", "Hybrid/Remote", "On-site or remote"):
+        response = _java_candidate(work_arrangement="hybrid", location_note=note)
+        out = decide_match(response, JAVA_JD, PROFILES)
+        assert out.skip_reason is None, note
+        assert out.work_arrangement == "remote"
+
+
+def test_hybrid_that_merely_mentions_remote_is_still_skipped() -> None:
+    response = _java_candidate(work_arrangement="hybrid", location_note="Hybrid, not remote")
+    out = decide_match(response, JAVA_JD, PROFILES)
+    assert out.skip_reason == "Hybrid role, not fully remote (Hybrid, not remote)."
+
+
+def test_office_based_with_no_location_stated_is_not_skipped() -> None:
+    response = _java_candidate(work_arrangement="onsite", location_note="Not stated")
+    out = decide_match(response, JAVA_JD, PROFILES)
+    assert out.skip_reason is None
+    assert out.work_arrangement == "unknown"

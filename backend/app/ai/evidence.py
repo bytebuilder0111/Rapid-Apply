@@ -175,6 +175,31 @@ def _names(resumes: list[dict]) -> str:
     return ", ".join(r["name"] for r in resumes)
 
 
+# "Remote or Hybrid", "Hybrid/Remote", "On-site or remote": fully remote is one of the options.
+_REMOTE_OPTION = re.compile(
+    r"\bremote\s*(or|/)\s*(hybrid|on-?site|in-office|office)\b"
+    r"|\b(hybrid|on-?site|in-office|office)\s*(or|/)\s*remote\b"
+)
+
+
+def remote_is_an_option(location_note: str) -> bool:
+    return bool(_REMOTE_OPTION.search(location_note.lower()))
+
+
+def work_arrangement(response: AnalysisResponse) -> str:
+    """The model's arrangement, corrected from its own location note: a JD offering remote as
+    an option ("Remote or Hybrid work model") is remote, and hybrid/on-site with no location
+    wording found is a guess, so it's unknown (flagged, not skipped)."""
+    note = response.location_note.strip()
+    if response.work_arrangement not in ("hybrid", "onsite"):
+        return response.work_arrangement
+    if remote_is_an_option(note):
+        return "remote"
+    if note.lower() in _EMPTY_VALUES | {"not stated"}:
+        return "unknown"
+    return response.work_arrangement
+
+
 def skip_reason(response: AnalysisResponse) -> str | None:
     """The client only takes senior-enough, US-remote jobs. A reason to skip the job, or None.
     A JD that doesn't state its location isn't skipped (the UI flags it instead)."""
@@ -184,12 +209,13 @@ def skip_reason(response: AnalysisResponse) -> str | None:
         return "Internship role."
     if response.seniority == "junior":
         return "Junior / entry-level role."
+    arrangement = work_arrangement(response)
     # Office-based first: the model tends to also flag "must be in Austin" as relocation.
-    if response.work_arrangement == "hybrid":
+    if arrangement == "hybrid":
         return f"Hybrid role, not fully remote{detail}."
-    if response.work_arrangement == "onsite":
+    if arrangement == "onsite":
         return f"On-site role, not remote{detail}."
-    if response.work_arrangement == "remote" and response.remote_location == "non_us":
+    if arrangement == "remote" and response.remote_location == "non_us":
         return f"Remote only outside the US{detail}."
     if response.relocation_required:
         return f"Requires relocation{detail}."
@@ -290,7 +316,7 @@ def decide_match(
     return AnalysisResult(
         jd_summary=response.jd_summary,
         role_type=response.role_type,
-        work_arrangement=response.work_arrangement,
+        work_arrangement=work_arrangement(response),
         remote_location=response.remote_location,
         relocation_required=response.relocation_required,
         location_note=response.location_note,
