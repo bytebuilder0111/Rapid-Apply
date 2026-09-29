@@ -34,10 +34,8 @@ function errorMessage(error: unknown, fallback: string): string {
 
 /** The sheet write runs in the background after Save: show it in progress right away, then
  * replace that message with how it went. */
-async function reportRecording(saved: Analysis): Promise<void> {
+async function reportRecording(saved: Analysis, id: string | number): Promise<void> {
   const label = `${saved.company_name} / ${saved.position_name}`;
-  // One toast, updated in place.
-  const id = toast.loading(`Recording to the Google Sheet: ${label}...`);
   let current = saved;
   for (let i = 0; i < 40 && current.record_status === "PENDING"; i++) {
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -70,6 +68,14 @@ async function reportRecording(saved: Analysis): Promise<void> {
     toast.info(`Saved: ${label}. Still recording to the Google Sheet...`, { id });
   }
 }
+
+/** A job being recorded: captured at the click, since the form is cleared right away. */
+type RecordJob = {
+  values: FormValues;
+  output: AnalyzeOutput;
+  profileId: string;
+  toastId: string | number;
+};
 
 // Seconds into the AI call; the AI's own progress isn't observable, so these are estimates.
 const AI_STEPS = [
@@ -256,31 +262,52 @@ export function ResumeSelector() {
   };
 
   const save = useMutation({
-    mutationFn: async (values: FormValues) => {
-      if (!analyzeOutput) throw new Error("Analyze first");
-      return analysisApi.save({
+    mutationFn: ({ values, output, profileId }: RecordJob) =>
+      analysisApi.save({
         company_name: values.company_name,
         position_name: values.position_name,
         job_description: values.job_description,
         job_link: values.job_link,
         profile_id: profileId,
         // The resume is the AI's pick; there's nothing to choose by hand.
-        selected_resume_type_id: analyzeOutput.result.recommended_resume_type_id ?? null,
-        result: analyzeOutput.result,
-        model: analyzeOutput.model,
-        prompt_version: analyzeOutput.prompt_version,
-        tokens: analyzeOutput.tokens,
-        latency_ms: analyzeOutput.latency_ms,
-      });
-    },
-    onSuccess: async (saved) => {
-      void reportRecording(saved);
-      setAnalyzeOutput(null);
-      reset();
+        selected_resume_type_id: output.result.recommended_resume_type_id ?? null,
+        result: output.result,
+        model: output.model,
+        prompt_version: output.prompt_version,
+        tokens: output.tokens,
+        latency_ms: output.latency_ms,
+      }),
+    onSuccess: async (saved, { toastId }) => {
+      void reportRecording(saved, toastId);
       await queryClient.invalidateQueries({ queryKey: ["analyses"] });
     },
-    onError: (error) => toast.error(errorMessage(error, "Couldn't save analysis")),
+    // The form was already cleared; offer the job back so nothing is lost.
+    onError: (error, { values, output, toastId }) =>
+      toast.error(errorMessage(error, "Couldn't save analysis"), {
+        id: toastId,
+        duration: 30000,
+        action: {
+          label: "Restore",
+          onClick: () => {
+            reset(values);
+            setAnalyzeOutput(output);
+          },
+        },
+      }),
   });
+
+  // Clears the form the moment the button is clicked; saving and the sheet write carry on
+  // in the background, reported in one toast.
+  const record = (values: FormValues) => {
+    if (!analyzeOutput) return;
+    const output = analyzeOutput;
+    const toastId = toast.loading(
+      `Recording to the Google Sheet: ${values.company_name} / ${values.position_name}...`,
+    );
+    setAnalyzeOutput(null);
+    reset();
+    save.mutate({ values, output, profileId, toastId });
+  };
 
   const resumeName = (id: string) => resumeTypes?.find((r) => r.id === id)?.name;
 
@@ -366,10 +393,10 @@ export function ResumeSelector() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={save.isPending || isDismatched(analyzeOutput.result)}
-                  onClick={handleSubmit((values) => save.mutate(values))}
+                  disabled={isDismatched(analyzeOutput.result)}
+                  onClick={handleSubmit(record)}
                 >
-                  {save.isPending ? "Recording..." : "Record to Sheet"}
+                  Record to Sheet
                 </Button>
               )}
             </div>
