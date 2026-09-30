@@ -28,7 +28,7 @@ HEADER_ROW = [
     "Resume",
     "Date",
     "Job Description",
-    "Applied By",
+    "Applied By",  # the client's name on rows the client recorded
 ]
 LAST_COLUMN = "I"
 

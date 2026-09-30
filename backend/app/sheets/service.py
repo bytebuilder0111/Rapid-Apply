@@ -345,7 +345,7 @@ def _build_row(
     applied_by: str,
 ) -> list:
     """No | Company Name | Position Name | Job Link | Status | Resume | Date | Job Description
-    | Applied By (the client or bidder who recorded it, e.g. "Max")"""
+    | Applied By (the client's name, e.g. "Max", when the client recorded it; else blank)"""
     return [
         number,
         _text(analysis.company_name),
@@ -403,7 +403,8 @@ async def record_analysis(analysis_id: UUID) -> None:
                 resume_name=resume_type.name if resume_type else "",
                 time_zone=time_zone,
                 locale=locale,
-                applied_by=(creator.name or creator.username) if creator else "",
+                # Only the client's own applications are signed; a bidder's stay blank.
+                applied_by=creator.name if creator and creator.role == Role.CLIENT else "",
             )
             await asyncio.to_thread(
                 writer.append_row, config.spreadsheet_id, config.sheet_name, row
