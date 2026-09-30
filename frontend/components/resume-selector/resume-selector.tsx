@@ -311,6 +311,9 @@ export function ResumeSelector() {
     save.mutate({ values, output, profileId, toastId });
   };
 
+  const canConfirm = analyzeOutput !== null && !isDismatched(analyzeOutput.result);
+  const applied = canConfirm && appliedTo === analyzeOutput;
+
   const resumeName = (id: string) => resumeTypes?.find((r) => r.id === id)?.name;
 
   return (
@@ -391,22 +394,20 @@ export function ResumeSelector() {
                 {isAnalyzing && <Loader2 className="size-4 animate-spin" />}
                 {!isAnalyzing ? "Analyze" : phase === "checking" ? "Checking duplicates..." : "Analyzing..."}
               </Button>
-              {analyzeOutput &&
-                (appliedTo === analyzeOutput ? (
-                  <Button type="button" variant="outline" onClick={handleSubmit(record)}>
-                    Record to Sheet
-                  </Button>
-                ) : (
-                  // Recording is only for jobs actually applied to, so it's asked first.
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isDismatched(analyzeOutput.result)}
-                    onClick={() => setAppliedTo(analyzeOutput)}
-                  >
-                    Did you apply to this job?
-                  </Button>
-                ))}
+              {/* All three are always shown and unlock in order: a matched analysis enables the
+                  question, and confirming it enables recording (only applied jobs are recorded). */}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canConfirm || applied}
+                onClick={() => setAppliedTo(analyzeOutput)}
+              >
+                {applied && <CheckCircle2 className="size-4" />}
+                Did you apply to this job?
+              </Button>
+              <Button type="button" variant="outline" disabled={!applied} onClick={handleSubmit(record)}>
+                Record to Sheet
+              </Button>
             </div>
           </form>
         </CardContent>
