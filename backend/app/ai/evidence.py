@@ -31,9 +31,19 @@ _EMPTY_VALUES = {"", "null", "none", "n/a", "na", "not specified", "unspecified"
 # role" judgment is overruled: the model's per-resume checks are too unreliable to veto a
 # resume that has nearly everything the JD names.
 STRONG_COVERAGE = 0.75
-# Job types that are a different discipline from the backend/full-stack resumes: there the
-# model's "different kind of role" verdict can't be overruled by stack overlap.
-_OTHER_DISCIPLINES = ("data", "devops", "mobile", "frontend")
+# Job types that are a different discipline from backend/full-stack engineering. Such a job
+# only fits a resume that is itself of that discipline, as its name or summary says; the
+# model's per-resume role verdict proved too unstable to decide this.
+_DISCIPLINE_WORDS = {
+    "data": re.compile(
+        r"\b(data (engineer|scientist)|ml engineer|machine learning|analytics engineer|mlops)"
+    ),
+    "devops": re.compile(
+        r"\b(devops|sre|site reliability|platform engineer|infrastructure engineer|cloud engineer)"
+    ),
+    "mobile": re.compile(r"\b(ios|android|mobile|react native|flutter)\b"),
+    "frontend": re.compile(r"\b(front[- ]?end|ui) (engineer|developer)"),
+}
 # Tokens that make a stack term a programming language (".NET" counts, via C#/.NET resumes).
 _LANGUAGE_TOKENS = {
     "python", "java", "go", "c#", "c++", "php", "ruby", "javascript", "typescript", "node",
@@ -233,6 +243,13 @@ _TOOL_NAMES = {
 }  # fmt: skip
 
 
+def fits_discipline(resume: dict, role_type: str) -> bool:
+    """For a data/DevOps/mobile/frontend job: whether the resume is that kind of resume."""
+    words = _DISCIPLINE_WORDS.get(role_type)
+    text = f"{resume['name']} {resume['summary']}".lower()
+    return words is None or bool(words.search(text))
+
+
 def _names(resumes: list[dict]) -> str:
     return ", ".join(r["name"] for r in resumes)
 
@@ -334,12 +351,12 @@ def decide_match(
     backend_decides = bool(backend) and response.role_type in ("backend", "fullstack")
     # A different discipline (a Data Engineer job asking only for Python): sharing the stack
     # doesn't make a software engineering resume fit, so the model's role verdict is final.
-    role_is_final = response.role_type in _OTHER_DISCIPLINES
+    other_discipline = response.role_type in _DISCIPLINE_WORDS
 
     def role_ok(p: dict, coverage: float) -> bool:
+        if other_discipline:
+            return fits_discipline(p, response.role_type)
         same = p["id"] in checks and checks[p["id"]].same_role
-        if role_is_final:
-            return same
         return same or coverage >= STRONG_COVERAGE or backend_decides
 
     candidates = [s for s in with_backend if role_ok(s[0], s[2])]

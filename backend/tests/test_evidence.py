@@ -475,3 +475,31 @@ def test_a_different_discipline_is_declined_even_with_the_whole_stack() -> None:
         "Python has stack in common with this JD (Python), but for a different kind of role "
         "than this data job."
     )
+
+
+def test_other_disciplines_need_a_resume_of_that_kind_whatever_the_model_says() -> None:
+    jd = "Data Engineer. Databricks lakehouse, event pipelines, ML infrastructure. Strong Python."
+    # The model sometimes calls a full-stack Python resume "same role"; that no longer counts.
+    checks = [_check(p["id"], same_role=True, fit=0.5) for p in LAKEYTH]
+    response = _response(role_type="data", core=["Python"], checks=checks)
+    assert decide_match(response, jd, LAKEYTH).recommended_resume_type_id is None
+
+    data_resume = {
+        "id": "data",
+        "name": "Data",
+        "summary": "Data engineer with 6 years building Spark and Databricks pipelines in Python.",
+        "skills": ["Python", "Spark", "Databricks", "Airflow"],
+    }
+    checks.append(_check("data", same_role=False, fit=0.2))
+    out = decide_match(
+        _response(role_type="data", core=["Python"], checks=checks), jd, [*LAKEYTH, data_resume]
+    )
+    assert out.recommended_resume_type_id == "data"
+
+
+def test_a_mobile_resume_still_fits_a_mobile_job() -> None:
+    jd = "Senior iOS engineer: Swift and SwiftUI."
+    response = _response(
+        role_type="mobile", core=["Swift"], checks=_all_checks(ios=_check("ios", same_role=False))
+    )
+    assert decide_match(response, jd, PROFILES).recommended_resume_type_id == "ios"
