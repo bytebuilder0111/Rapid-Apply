@@ -334,7 +334,10 @@ def test_languages_joined_by_and_are_all_required() -> None:
         core=["Java", "Python"], checks=_all_checks(java=_check("java", same_role=False))
     )
     out = decide_match(response, jd, PROFILES)
-    assert out.recommended_resume_type_id is None  # half the stack, and a different role
+    # Both are required ("and", not options), so Python is reported missing; Java is still
+    # one of this backend job's languages, so the model's role guess doesn't veto it.
+    assert out.recommended_resume_type_id == "java"
+    assert out.reasoning == "Java Backend has Java from the stack this JD names; missing Python."
 
 
 # Lakeyth's real resumes: Python and C# also list TypeScript, for their React front ends.
@@ -438,3 +441,24 @@ def test_visitor_location_form_field_is_dropped() -> None:
     assert "Beijing" not in cleaned
     assert "Location (city" not in cleaned
     assert "Our stack: TypeScript." in cleaned and "Accept Terms" in cleaned
+
+
+def test_matching_backend_is_not_vetoed_on_a_fullstack_job() -> None:
+    # Brillio: .NET backend with a heavy JS front end; C# has 70% of the named stack and the
+    # model called it a different kind of role.
+    jd = (
+        ".NET Lead Full Stack Engineer. Frontend: AngularJS, ReactJS, TypeScript, JavaScript. "
+        "Backend APIs in .NET, Node.js."
+    )
+    checks = [_check(p["id"], same_role=False, fit=0.6) for p in LAKEYTH]
+    response = _response(
+        role_type="fullstack",
+        core=["AngularJS", "ReactJS", "TypeScript", "JavaScript", "Node.js", ".NET"],
+        checks=checks,
+    )
+    out = decide_match(response, jd, LAKEYTH)
+    assert out.recommended_resume_type_id == "csharp"
+    assert out.reasoning == (
+        "C# has ReactJS, TypeScript, JavaScript, .NET from the stack this JD names; "
+        "missing AngularJS, Node.js."
+    )

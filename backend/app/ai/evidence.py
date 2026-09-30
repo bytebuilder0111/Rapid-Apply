@@ -325,9 +325,14 @@ def decide_match(
     def fit(p: dict) -> float:
         return checks[p["id"]].fit if p["id"] in checks else 0.0
 
+    # For server-side jobs the backend language is the standard, so a resume with the JD's
+    # backend (all of with_backend, when the JD names one) isn't vetoed by the model's role
+    # guess. Other jobs keep the veto: an Android JD naming Java isn't a Java backend job.
+    backend_decides = bool(backend) and response.role_type in ("backend", "fullstack")
+
     def role_ok(p: dict, coverage: float) -> bool:
         same = p["id"] in checks and checks[p["id"]].same_role
-        return same or coverage >= STRONG_COVERAGE
+        return same or coverage >= STRONG_COVERAGE or backend_decides
 
     candidates = [s for s in with_backend if role_ok(s[0], s[2])]
 
