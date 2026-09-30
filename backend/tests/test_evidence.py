@@ -105,7 +105,7 @@ def test_same_language_on_a_different_platform_is_declined() -> None:
     response = _response(role_type="mobile", core=["Kotlin", "Java"], checks=_all_checks())
     out = decide_match(response, jd, PROFILES)
     assert out.recommended_resume_type_id is None
-    assert "Java Backend has part of the named stack" in out.reasoning
+    assert "Java Backend has stack in common with this JD" in out.reasoning
     assert "different kind of role than this mobile job" in out.reasoning
 
 
@@ -461,4 +461,17 @@ def test_matching_backend_is_not_vetoed_on_a_fullstack_job() -> None:
     assert out.reasoning == (
         "C# has ReactJS, TypeScript, JavaScript, .NET from the stack this JD names; "
         "missing AngularJS, Node.js."
+    )
+
+
+def test_a_different_discipline_is_declined_even_with_the_whole_stack() -> None:
+    # Function Health "Data Engineer": the only language is Python, which the Python resume
+    # has, but the model judged every resume a different kind of role.
+    jd = "Data Engineer. Databricks lakehouse, event pipelines, ML infrastructure. Strong Python."
+    checks = [_check(p["id"], same_role=False, fit=0.3) for p in LAKEYTH]
+    out = decide_match(_response(role_type="data", core=["Python"], checks=checks), jd, LAKEYTH)
+    assert out.recommended_resume_type_id is None
+    assert out.reasoning == (
+        "Python has stack in common with this JD (Python), but for a different kind of role "
+        "than this data job."
     )

@@ -31,6 +31,9 @@ _EMPTY_VALUES = {"", "null", "none", "n/a", "na", "not specified", "unspecified"
 # role" judgment is overruled: the model's per-resume checks are too unreliable to veto a
 # resume that has nearly everything the JD names.
 STRONG_COVERAGE = 0.75
+# Job types that are a different discipline from the backend/full-stack resumes: there the
+# model's "different kind of role" verdict can't be overruled by stack overlap.
+_OTHER_DISCIPLINES = ("data", "devops", "mobile", "frontend")
 # Tokens that make a stack term a programming language (".NET" counts, via C#/.NET resumes).
 _LANGUAGE_TOKENS = {
     "python", "java", "go", "c#", "c++", "php", "ruby", "javascript", "typescript", "node",
@@ -329,9 +332,14 @@ def decide_match(
     # backend (all of with_backend, when the JD names one) isn't vetoed by the model's role
     # guess. Other jobs keep the veto: an Android JD naming Java isn't a Java backend job.
     backend_decides = bool(backend) and response.role_type in ("backend", "fullstack")
+    # A different discipline (a Data Engineer job asking only for Python): sharing the stack
+    # doesn't make a software engineering resume fit, so the model's role verdict is final.
+    role_is_final = response.role_type in _OTHER_DISCIPLINES
 
     def role_ok(p: dict, coverage: float) -> bool:
         same = p["id"] in checks and checks[p["id"]].same_role
+        if role_is_final:
+            return same
         return same or coverage >= STRONG_COVERAGE or backend_decides
 
     candidates = [s for s in with_backend if role_ok(s[0], s[2])]
@@ -376,7 +384,7 @@ def decide_match(
         names = _names([s[0] for s in with_backend])
         verb = "has" if len(with_backend) == 1 else "have"
         reasoning = (
-            f"{names} {verb} part of the named stack ({stack}), "
+            f"{names} {verb} stack in common with this JD ({stack}), "
             f"but for a different kind of role than this {response.role_type} job."
         )
     else:
