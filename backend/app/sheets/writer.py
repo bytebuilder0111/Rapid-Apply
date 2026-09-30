@@ -28,8 +28,9 @@ HEADER_ROW = [
     "Resume",
     "Date",
     "Job Description",
+    "Applied By",
 ]
-LAST_COLUMN = "H"
+LAST_COLUMN = "I"
 
 
 def _is_number(value: str) -> bool:

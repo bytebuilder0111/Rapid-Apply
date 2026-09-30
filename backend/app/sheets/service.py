@@ -336,9 +336,16 @@ def _sheet_date(moment: datetime, time_zone: str, locale: str) -> str:
 
 
 def _build_row(
-    analysis: Analysis, *, number: int, resume_name: str, time_zone: str, locale: str
+    analysis: Analysis,
+    *,
+    number: int,
+    resume_name: str,
+    time_zone: str,
+    locale: str,
+    applied_by: str,
 ) -> list:
-    """No | Company Name | Position Name | Job Link | Status | Resume | Date | Job Description"""
+    """No | Company Name | Position Name | Job Link | Status | Resume | Date | Job Description
+    | Applied By (the client or bidder who recorded it, e.g. "Max")"""
     return [
         number,
         _text(analysis.company_name),
@@ -348,6 +355,7 @@ def _build_row(
         _text(resume_name),
         _sheet_date(analysis.created_at, time_zone, locale),
         _text(analysis.job_description[:_MAX_CELL_CHARS]),
+        _text(applied_by),
     ]
 
 
@@ -395,6 +403,7 @@ async def record_analysis(analysis_id: UUID) -> None:
                 resume_name=resume_type.name if resume_type else "",
                 time_zone=time_zone,
                 locale=locale,
+                applied_by=(creator.name or creator.username) if creator else "",
             )
             await asyncio.to_thread(
                 writer.append_row, config.spreadsheet_id, config.sheet_name, row

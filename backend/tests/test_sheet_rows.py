@@ -29,12 +29,18 @@ def test_header_matches_the_bid_sheet() -> None:
         "Resume",
         "Date",
         "Job Description",
+        "Applied By",
     ]
 
 
 def test_row_follows_the_bid_sheet_columns() -> None:
     row = _build_row(
-        _analysis(), number=2, resume_name="Node", time_zone="America/Chicago", locale="en_US"
+        _analysis(),
+        number=2,
+        resume_name="Node",
+        time_zone="America/Chicago",
+        locale="en_US",
+        applied_by="Max",
     )
     assert row == [
         2,
@@ -45,6 +51,7 @@ def test_row_follows_the_bid_sheet_columns() -> None:
         "Node",
         "9/4/2026 12:09:33",  # 17:09 UTC is 12:09 in Chicago (CDT)
         "Build backend services in Node.js.",
+        "Max",
     ]
 
 
@@ -61,10 +68,12 @@ def test_text_that_looks_like_a_formula_stays_text() -> None:
         resume_name="Java",
         time_zone="UTC",
         locale="en_US",
+        applied_by="=cmd",
     )
     assert row[1] == "'=IMPORTXML(1)"
     assert row[3] == ""
     assert row[7] == "'+1 555"
+    assert row[8] == "'=cmd"
 
 
 def test_very_long_job_description_fits_in_a_cell() -> None:
@@ -74,6 +83,7 @@ def test_very_long_job_description_fits_in_a_cell() -> None:
         resume_name="Go",
         time_zone="UTC",
         locale="en_US",
+        applied_by="Max",
     )
     assert len(row[7]) == 49_000
 
