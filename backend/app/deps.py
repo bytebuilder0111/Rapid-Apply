@@ -23,6 +23,9 @@ async def get_current_user(
     user = await db.get(User, UUID(payload["sub"]))
     if user is None or not user.is_active or user.deleted_at is not None:
         raise AppError("unauthorized", "Not authenticated", 401)
+    # Sessions ended since this token was issued (password reset, admin sign-out).
+    if payload.get("sv", 0) != user.session_version:
+        raise AppError("session_ended", "Your session has ended. Please sign in again.", 401)
     return user
 
 

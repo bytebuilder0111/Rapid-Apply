@@ -40,4 +40,6 @@ export const adminApi = {
   reactivateBidder: (id: string) => api.post<BidderUser>(`/admin/bidders/${id}/reactivate`),
   resetBidderPassword: (id: string, new_password: string) =>
     api.post<void>(`/admin/bidders/${id}/reset-password`, { new_password }),
+  /** Ends all of the bidder's sessions at once. */
+  signOutBidder: (id: string) => api.post<void>(`/admin/bidders/${id}/sign-out`),
 };

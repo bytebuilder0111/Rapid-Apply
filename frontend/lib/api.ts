@@ -66,6 +66,9 @@ async function rawRequest<T>(path: string, options: RequestOptions = {}): Promis
   return (await response.json()) as T;
 }
 
+/** Fired when the session can't be renewed (e.g. an admin signed this user out). */
+export const SESSION_ENDED_EVENT = "session-ended";
+
 let refreshPromise: Promise<string | null> | null = null;
 
 function refreshAccessToken(): Promise<string | null> {
@@ -96,7 +99,10 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
     if (!canRetry) throw error;
 
     const newToken = await refreshAccessToken();
-    if (!newToken) throw error;
+    if (!newToken) {
+      window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+      throw error;
+    }
     return rawRequest<T>(path, { ...options, skipRetry: true });
   }
 }

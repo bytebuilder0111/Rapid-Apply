@@ -131,6 +131,12 @@ async def reactivate_bidder(bidder_id: UUID, db: AsyncSession = Depends(get_db))
     return BidderOut.model_validate(bidder)
 
 
+@router.post("/bidders/{bidder_id}/sign-out", status_code=204)
+async def sign_out_bidder(bidder_id: UUID, db: AsyncSession = Depends(get_db)) -> None:
+    bidder = await service.get_bidder(db, bidder_id)
+    await service.sign_out(db, bidder)
+
+
 @router.post("/bidders/{bidder_id}/reset-password", status_code=204)
 async def reset_bidder_password(
     bidder_id: UUID, payload: SetPasswordRequest, db: AsyncSession = Depends(get_db)

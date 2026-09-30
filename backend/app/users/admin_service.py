@@ -97,16 +97,24 @@ async def update_client(db: AsyncSession, client: User, payload: ClientUpdate) -
     return client
 
 
-async def _revoke_all_refresh_tokens(db: AsyncSession, user_id: UUID) -> None:
-    result = await db.execute(select(RefreshToken).where(RefreshToken.user_id == user_id))
+async def _end_sessions(db: AsyncSession, user: User) -> None:
+    """Signs the user out everywhere, at once: refresh tokens are revoked, and the new
+    session version invalidates access tokens already issued."""
+    result = await db.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
     for token in result.scalars().all():
         token.revoked = True
+    user.session_version += 1
+
+
+async def sign_out(db: AsyncSession, user: User) -> None:
+    await _end_sessions(db, user)
+    await db.commit()
 
 
 async def set_active(db: AsyncSession, user: User, *, is_active: bool) -> User:
     user.is_active = is_active
     if not is_active:
-        await _revoke_all_refresh_tokens(db, user.id)
+        await _end_sessions(db, user)
     await db.commit()
     await db.refresh(user)
     return user
@@ -114,19 +122,19 @@ async def set_active(db: AsyncSession, user: User, *, is_active: bool) -> User:
 
 async def reset_password(db: AsyncSession, user: User, new_password: str) -> None:
     user.password_hash = hash_password(new_password)
-    await _revoke_all_refresh_tokens(db, user.id)
+    await _end_sessions(db, user)
     await db.commit()
 
 
 async def soft_delete_client(db: AsyncSession, client: User) -> User:
     client.deleted_at = datetime.now(UTC)
     client.is_active = False
-    await _revoke_all_refresh_tokens(db, client.id)
+    await _end_sessions(db, client)
 
     result = await db.execute(select(User).where(User.client_id == client.id))
     for bidder in result.scalars().all():
         bidder.is_active = False
-        await _revoke_all_refresh_tokens(db, bidder.id)
+        await _end_sessions(db, bidder)
 
     await db.commit()
     await db.refresh(client)

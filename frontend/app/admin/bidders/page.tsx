@@ -190,7 +190,7 @@ function ResetPasswordDialog({
   const onSubmit = async (values: PasswordValues) => {
     try {
       await adminApi.resetBidderPassword(bidder.id, values.new_password);
-      toast.success(`Password reset for ${bidder.username}`);
+      toast.success(`Password reset for ${bidder.username}; they've been signed out`);
       reset();
       onOpenChange(false);
     } catch (error) {
@@ -204,7 +204,9 @@ function ResetPasswordDialog({
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle>Reset password</DialogTitle>
-            <DialogDescription>Sets a new password for {bidder.username}.</DialogDescription>
+            <DialogDescription>
+              Sets a new password for {bidder.username} and signs them out everywhere.
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2 py-4">
             <Label htmlFor="new_password">New password</Label>
@@ -241,6 +243,12 @@ function BidderRow({ bidder, clients }: { bidder: BidderUser; clients: ClientUse
     onError: (error) => toast.error(errorMessage(error, "Action failed")),
   });
 
+  const signOut = useMutation({
+    mutationFn: () => adminApi.signOutBidder(bidder.id),
+    onSuccess: () => toast.success(`${bidder.username} has been signed out everywhere`),
+    onError: (error) => toast.error(errorMessage(error, "Couldn't sign out")),
+  });
+
   return (
     <TableRow>
       <TableCell className="font-medium">{bidder.name}</TableCell>
@@ -258,6 +266,16 @@ function BidderRow({ bidder, clients }: { bidder: BidderUser; clients: ClientUse
         </Button>
         <Button variant="outline" size="sm" onClick={() => setResetOpen(true)}>
           Reset password
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={signOut.isPending}
+          onClick={() => {
+            if (window.confirm(`Sign ${bidder.username} out on every device now?`)) signOut.mutate();
+          }}
+        >
+          {signOut.isPending ? "Signing out..." : "Sign out"}
         </Button>
       </TableCell>
       <ResetPasswordDialog bidder={bidder} open={resetOpen} onOpenChange={setResetOpen} />

@@ -33,6 +33,7 @@ def create_access_token(user: User) -> str:
         "sub": str(user.id),
         "role": user.role.value,
         "client_id": str(user.client_id) if user.client_id else None,
+        "sv": user.session_version,
         "iat": now,
         "exp": now + ACCESS_TOKEN_TTL,
     }

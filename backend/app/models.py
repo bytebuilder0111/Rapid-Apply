@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +42,9 @@ class User(Base):
         ),
         nullable=True,
     )
+    # Stamped into every access token; bumping it ends all of the user's sessions at once
+    # (password reset, deactivation, admin sign-out). See app/deps.py.
+    session_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     # CLIENT rows only: set by the admin "soft delete" action. Distinct from is_active
     # (deactivate is reversible and still visible in lists; this hides the client entirely).
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -2,7 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-import { api } from "@/lib/api";
+import { toast } from "sonner";
+
+import { api, SESSION_ENDED_EVENT } from "@/lib/api";
 import { setAccessToken, type UserOut } from "@/lib/auth";
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated";
@@ -17,6 +19,8 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const SESSION_CHECK_MS = 60_000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserOut | null>(null);
@@ -41,6 +45,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // Ends this tab's session as soon as the server has ended it (password reset, admin
+  // sign-out): on any request that can't renew the session, and by checking every minute and
+  // when the tab regains focus, so an idle page is signed out too.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const endSession = () => {
+      setAccessToken(null);
+      setUser(null);
+      setStatus("unauthenticated");
+      toast.info("Your session has ended. Please sign in again.");
+    };
+    const check = () => {
+      if (document.visibilityState === "visible") api.get("/auth/me").catch(() => {});
+    };
+    window.addEventListener(SESSION_ENDED_EVENT, endSession);
+    document.addEventListener("visibilitychange", check);
+    const timer = setInterval(check, SESSION_CHECK_MS);
+    return () => {
+      window.removeEventListener(SESSION_ENDED_EVENT, endSession);
+      document.removeEventListener("visibilitychange", check);
+      clearInterval(timer);
+    };
+  }, [status]);
 
   const login = useCallback(async (username: string, password: string) => {
     const data = await api.post<LoginResponse>("/auth/login", { username, password }, { skipAuth: true });
