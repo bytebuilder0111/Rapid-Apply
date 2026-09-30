@@ -166,6 +166,8 @@ export function ResumeSelector() {
   const [analyzeOutput, setAnalyzeOutput] = useState<AnalyzeOutput | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
+  // The analysis the user confirmed applying to; Record to Sheet shows only for that one.
+  const [appliedTo, setAppliedTo] = useState<AnalyzeOutput | null>(null);
   const [phase, setPhase] = useState<AnalyzePhase>("checking");
   const isBidder = user?.role === "BIDDER";
   const [chosenProfileId, setChosenProfileId] = useState<string>("");
@@ -389,16 +391,22 @@ export function ResumeSelector() {
                 {isAnalyzing && <Loader2 className="size-4 animate-spin" />}
                 {!isAnalyzing ? "Analyze" : phase === "checking" ? "Checking duplicates..." : "Analyzing..."}
               </Button>
-              {analyzeOutput && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isDismatched(analyzeOutput.result)}
-                  onClick={handleSubmit(record)}
-                >
-                  Record to Sheet
-                </Button>
-              )}
+              {analyzeOutput &&
+                (appliedTo === analyzeOutput ? (
+                  <Button type="button" variant="outline" onClick={handleSubmit(record)}>
+                    Record to Sheet
+                  </Button>
+                ) : (
+                  // Recording is only for jobs actually applied to, so it's asked first.
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isDismatched(analyzeOutput.result)}
+                    onClick={() => setAppliedTo(analyzeOutput)}
+                  >
+                    Did you apply to this job?
+                  </Button>
+                ))}
             </div>
           </form>
         </CardContent>
@@ -425,10 +433,15 @@ export function ResumeSelector() {
                 "A skipped job can't be saved."
               ) : isDismatched(analyzeOutput.result) ? (
                 "A Dismatched JD can't be saved."
-              ) : (
+              ) : appliedTo === analyzeOutput ? (
                 <>
                   Not recorded yet: click <span className="font-medium">Record to Sheet</span> to add it to
                   the profile&apos;s Google Sheet.
+                </>
+              ) : (
+                <>
+                  Not recorded yet: once you&apos;ve applied, click{" "}
+                  <span className="font-medium">Did you apply to this job?</span>
                 </>
               )}
             </p>
