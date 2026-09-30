@@ -82,6 +82,13 @@ def _client(api: str, version: str, refresh_token: str):
     return clients[key]
 
 
+def _cell_text(value: object) -> str:
+    """An unformatted cell as text: 12 rather than 12.0 for whole numbers."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 class SheetsWriter:
     def __init__(self, refresh_token: str) -> None:
         self._refresh_token = refresh_token
@@ -160,18 +167,30 @@ class SheetsWriter:
         ]
         return (max(numbers) + 1 if numbers else 1), props["timeZone"], props["locale"]
 
-    def recorded_jobs(self, spreadsheet_id: str, sheet_name: str) -> list[tuple[int, list[str]]]:
-        """(sheet row number, [company, position, job link]) for every data row, read from
-        columns B-D of the bid-sheet layout (row 1 is the header)."""
+    def recorded_jobs(self, spreadsheet_id: str, sheet_name: str) -> list[tuple[int, list]]:
+        """(sheet row number, [company, position, job link, date]) for every data row, from
+        columns B-D and G of the bid-sheet layout (row 1 is the header). Values are read
+        unformatted, so a date is its serial number whatever the cell's display format."""
         rows = (
             self._sheets()
             .spreadsheets()
             .values()
-            .get(spreadsheetId=spreadsheet_id, range=_a1(sheet_name, "B2:D"))
+            .get(
+                spreadsheetId=spreadsheet_id,
+                range=_a1(sheet_name, "B2:G"),
+                valueRenderOption="UNFORMATTED_VALUE",
+                dateTimeRenderOption="SERIAL_NUMBER",
+            )
             .execute()
             .get("values", [])
         )
-        return [(i + 2, (row + ["", "", ""])[:3]) for i, row in enumerate(rows) if any(row)]
+        jobs = []
+        for i, row in enumerate(rows):
+            cells = (row + [""] * 6)[:6]
+            company, position, link = (_cell_text(v) for v in cells[:3])
+            if company or position or link:
+                jobs.append((i + 2, [company, position, link, cells[5]]))
+        return jobs
 
     def append_row(self, spreadsheet_id: str, sheet_name: str, row: list) -> None:
         # USER_ENTERED so the link becomes clickable and the date a real date; callers escape

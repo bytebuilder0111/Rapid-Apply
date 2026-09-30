@@ -82,6 +82,7 @@ async def _find_duplicate(
             position=position,
             job_link=job_link or "",
             where=f"saved for {profile.name} on {created:%Y-%m-%d}",
+            applied_on=created.date(),
         )
         for company, position, job_link, created in rows.all()
     ]
@@ -101,6 +102,7 @@ async def _find_duplicate(
             job_link=job_link or "",
             where=f"{profile.name}'s history, {source}"
             + (f", applied {applied:%Y-%m-%d}" if applied else ""),
+            applied_on=applied,
         )
         for company, position, job_link, applied, source in history.all()
     ]
@@ -111,6 +113,7 @@ async def _find_duplicate(
         company=payload.company_name,
         position=payload.position_name,
         job_link=payload.job_link,
+        today=datetime.now(UTC).date(),
     )
 
 

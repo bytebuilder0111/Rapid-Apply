@@ -14,22 +14,20 @@ import csv
 import io
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analysis.duplicates import parse_date
 from app.analysis.models import JobHistory
 from app.db import SessionLocal
 from app.models import Role, User
 from app.profiles.models import Profile
 
 MAX_TEXT = 255
-_DATE_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y")
-# Google Sheets/Excel serial dates count days from 1899-12-30.
-_SERIAL_EPOCH = date(1899, 12, 30)
 
 
 @dataclass
@@ -46,18 +44,6 @@ def _clean_link(value: str) -> str | None:
     """The first http(s) URL in the cell ("ehttps://..." typos included), or None."""
     match = re.search(r"https?://\S+", value)
     return match.group(0) if match else None
-
-
-def _parse_date(value: str) -> date | None:
-    value = value.strip()
-    if re.fullmatch(r"\d{5}(\.\d+)?", value):
-        return _SERIAL_EPOCH + timedelta(days=int(float(value)))
-    for fmt in _DATE_FORMATS:
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            continue
-    return None
 
 
 def _fit(value: str, label: str, notes: list[str]) -> str:
@@ -95,7 +81,7 @@ def parse_history(text: str) -> list[HistoryRow]:
                 company=_fit(cells[col["company name"]], "company", notes),
                 position=_fit(cells[col["position name"]], "position", notes),
                 job_link=link,
-                applied_on=_parse_date(cells[col["date"]]),
+                applied_on=parse_date(cells[col["date"]]),
                 notes=notes,
             )
         )

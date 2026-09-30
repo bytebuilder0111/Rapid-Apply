@@ -1,4 +1,6 @@
-from app.analysis.duplicates import Entry, find_duplicate, normalize_link
+from datetime import date
+
+from app.analysis.duplicates import Entry, find_duplicate, normalize_link, parse_date
 
 SHEET = [
     Entry(
@@ -69,3 +71,40 @@ def test_company_punctuation_and_possessive_are_ignored() -> None:
         sheet, company="Samsara’s", position="Senior Software Engineer II", job_link="https://n.io"
     )
     assert reason is not None
+
+
+def test_same_company_within_seven_days_is_turned_away_whatever_the_position() -> None:
+    applied = [
+        Entry(
+            company="Stripe, LLC",
+            position="Senior Software Engineer",
+            job_link="https://stripe.com/jobs/1",
+            where="row 64 of Bids > Kareem",
+            applied_on=date(2026, 9, 24),
+        )
+    ]
+
+    def check(today: date, company: str = "Stripe") -> str | None:
+        return find_duplicate(
+            applied,
+            company=company,
+            position="Backend Engineer",
+            job_link="https://stripe.com/jobs/2",
+            today=today,
+        )
+
+    assert check(date(2026, 9, 30)) == (
+        'Already applied to "Stripe, LLC" 6 days ago ("Senior Software Engineer", row 64 of '
+        "Bids > Kareem). Wait 7 days before applying to the same company again."
+    )
+    assert check(date(2026, 9, 24)).startswith('Already applied to "Stripe, LLC" today')
+    assert check(date(2026, 10, 1)) is None  # 7 days later
+    assert check(date(2026, 9, 30), company="Stripe Climate") is None
+
+
+def test_sheet_dates_are_read_from_serial_numbers_or_text() -> None:
+    assert parse_date(46294) == date(2026, 9, 29)
+    assert parse_date(46294.81) == date(2026, 9, 29)
+    assert parse_date("9/29/2026 19:23:00") == date(2026, 9, 29)
+    assert parse_date("2026-09-29 9:08:20") == date(2026, 9, 29)
+    assert parse_date("") is None and parse_date("Applied") is None

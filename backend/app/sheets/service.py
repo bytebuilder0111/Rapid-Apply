@@ -10,7 +10,7 @@ from googleapiclient.errors import HttpError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.analysis.duplicates import Entry
+from app.analysis.duplicates import Entry, parse_date
 from app.analysis.models import Analysis, RecordStatus
 from app.db import SessionLocal
 from app.errors import AppError
@@ -294,8 +294,14 @@ async def recorded_jobs(
     )
     where = f"{config.spreadsheet_name or 'your sheet'} > {config.sheet_name}"
     return [
-        Entry(company=company, position=position, job_link=link, where=f"row {n} of {where}")
-        for n, (company, position, link) in rows
+        Entry(
+            company=company,
+            position=position,
+            job_link=link,
+            where=f"row {n} of {where}",
+            applied_on=parse_date(applied[0]) if applied else None,
+        )
+        for n, (company, position, link, *applied) in rows
     ]
 
 
