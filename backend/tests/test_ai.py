@@ -8,7 +8,7 @@ from openai.lib._pydantic import to_strict_json_schema
 
 from app.ai.prompts import build_user_prompt
 from app.ai.schemas import AnalysisResponse, AnalysisResult, ResumeCheck, ResumeSummary
-from app.ai.service import analyze_job_description, summarize_resume
+from app.ai.service import MAX_KEY_SKILLS, analyze_job_description, summarize_resume
 from app.analysis.models import RecordStatus
 from app.analysis.schemas import AnalysisOut
 from app.errors import AppError
@@ -92,12 +92,13 @@ def test_response_schema_is_valid_for_openai_and_summarizes_first() -> None:
     to_strict_json_schema(ResumeSummary)
 
 
-async def test_summarize_resume_trims_skills_to_eight() -> None:
-    parsed = ResumeSummary(summary=" Backend dev. ", key_skills=[f"s{i}" for i in range(12)])
+async def test_summarize_resume_keeps_every_skill_up_to_the_cap() -> None:
+    skills = [f"s{i}" for i in range(MAX_KEY_SKILLS + 5)]
+    parsed = ResumeSummary(summary=" Backend dev. ", key_skills=[" s0 ", "", *skills[1:]])
     with patch("app.ai.service.AsyncOpenAI", _fake_openai(parsed)):
         result = await summarize_resume(api_key="k", model="gpt-4o-mini", resume_text="cv")
     assert result.summary == "Backend dev."
-    assert result.key_skills == [f"s{i}" for i in range(8)]
+    assert result.key_skills == skills[:MAX_KEY_SKILLS]
 
 
 async def test_summarize_resume_retries_once_then_errors() -> None:
