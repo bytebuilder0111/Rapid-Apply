@@ -1,16 +1,20 @@
 """All prompts, versioned. PROMPT_VERSION is stored on every analysis row so we can tell
 which prompt produced a given result after this file changes."""
 
-RESUME_PROMPT_VERSION = "resume-summary-v1"
+RESUME_PROMPT_VERSION = "resume-summary-v2"
 
 RESUME_SYSTEM_PROMPT = """You summarize a candidate's resume so it can later be matched
 against job descriptions. Return:
 
 - summary: 30 to 50 words of plain, easy-to-read English. Start with the candidate's role
-  and years of experience, then their core language(s) and framework(s), then their main
-  domains or kinds of systems built. No names, contact details, or company names.
-- key_skills: the candidate's most prominent technical skills, most important first,
-  at most 8, each a short name (e.g. "Python", "Django", "PostgreSQL", "AWS")."""
+  as their titles and work show it (e.g. "Senior backend-focused full-stack software
+  engineer", "Data engineer") and years of experience, then their core language(s) and
+  framework(s), then their main domains or kinds of systems built. No names, contact
+  details, or company names.
+- key_skills: EVERY technical skill the resume names (skills section and experience):
+  programming languages, frameworks and libraries, databases, cloud services, and tools.
+  Each a short name as written (e.g. "Python", "Next.js", "PostgreSQL", "AWS Lambda"), no
+  duplicates. Put the main backend language and its frameworks first."""
 
 
 def build_resume_prompt(resume_text: str) -> str:

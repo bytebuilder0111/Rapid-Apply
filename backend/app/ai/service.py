@@ -23,7 +23,8 @@ from app.ai.prompts import (
 from app.ai.schemas import AnalysisResponse, AnalysisResult, ResumeSummary
 from app.errors import AppError
 
-MAX_KEY_SKILLS = 8
+# Enough for every skill a resume names; matching checks JD terms against this list.
+MAX_KEY_SKILLS = 40
 
 
 def _map_openai_error(exc: Exception, *, model: str) -> AppError:

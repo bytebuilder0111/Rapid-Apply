@@ -26,7 +26,7 @@ class ResumeType(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # Key skills extracted from the uploaded resume (at most ~8).
+    # Every technical skill the uploaded resume names (see RESUME_SYSTEM_PROMPT).
     skills: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     resume_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     resume_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
