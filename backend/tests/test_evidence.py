@@ -503,3 +503,15 @@ def test_a_mobile_resume_still_fits_a_mobile_job() -> None:
         role_type="mobile", core=["Swift"], checks=_all_checks(ios=_check("ios", same_role=False))
     )
     assert decide_match(response, jd, PROFILES).recommended_resume_type_id == "ios"
+
+
+def test_no_language_data_job_is_not_given_a_software_resume() -> None:
+    # Camunda "Senior Data Engineer": dbt, Terraform, pipelines, no language named.
+    jd = "Senior Data Engineer. dbt, data modeling, Terraform, cloud pipelines, CI/CD."
+    checks = [_check(p["id"], same_role=False, fit=0.0) for p in LAKEYTH]
+    out = decide_match(_response(role_type="data", core=[], checks=checks), jd, LAKEYTH)
+    assert out.recommended_resume_type_id is None
+    assert out.reasoning == (
+        "None of your resumes is for this kind of role (a data job), and the JD doesn't name "
+        "a programming language."
+    )
