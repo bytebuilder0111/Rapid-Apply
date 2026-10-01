@@ -290,6 +290,19 @@ def work_arrangement(response: AnalysisResponse) -> str:
     return response.work_arrangement
 
 
+# The gender tag German, Austrian and Swiss postings add to the title by law: "(m/f/d)",
+# "(m/w/d)", "(w/m/x)". A remote job with one is hired in that country, not in the US.
+_DACH_TITLE_TAG = re.compile(r"\((?:[mwfdx]|div)(?:\s*/\s*(?:[mwfdx]|div|divers)){1,2}\)", re.I)
+
+
+def non_us_by_text(response: AnalysisResponse, job_description: str) -> AnalysisResponse:
+    """The model reads "work from wherever you like" as worldwide even when the JD is a
+    German posting; the title tag settles it."""
+    if response.remote_location == "non_us" or not _DACH_TITLE_TAG.search(job_description):
+        return response
+    return response.model_copy(update={"remote_location": "non_us"})
+
+
 def skip_reason(response: AnalysisResponse) -> str | None:
     """The client only takes senior-enough, US-remote jobs. A reason to skip the job, or None.
     A JD that doesn't state its location isn't skipped (the UI flags it instead)."""
@@ -315,6 +328,7 @@ def skip_reason(response: AnalysisResponse) -> str | None:
 def decide_match(
     response: AnalysisResponse, job_description: str, resumes: list[dict]
 ) -> AnalysisResult:
+    response = non_us_by_text(response, job_description)
     jd_tokens = _tokens(job_description)
     core = verified_core_stack(response.jd_core_stack, job_description)
 

@@ -21,7 +21,7 @@ def build_resume_prompt(resume_text: str) -> str:
     return f"Resume:\n{resume_text.strip()}"
 
 
-PROMPT_VERSION = "jd-analysis-v10"
+PROMPT_VERSION = "jd-analysis-v11"
 
 SYSTEM_PROMPT = """You are a technical recruiter's assistant. You assess a job description
 against each of a client's resumes. Each resume is given as an id, a name, a short summary,
@@ -48,7 +48,10 @@ strict. Return:
      can take it (US only, specific US states or time zones, or a region that includes the
      US like "North America" or "Americas"); "worldwide" if anywhere; "non_us" if it's
      limited to places outside the US (e.g. Canada only, UK, EU, LATAM, India, APAC);
-     "unknown" if not stated or the role isn't remote.
+     "unknown" if not stated or the role isn't remote. "worldwide" only if the JD says it
+     hires in any country; "work from wherever you like" is not that. A job whose location,
+     benefits, or required language point to one non-US country (e.g. "Remote, Leer", a
+     "(m/f/d)" title, German required, statutory vacation days) is "non_us".
    - relocation_required: true only if the JD explicitly says the candidate must relocate or
      move (e.g. "relocation required", "must relocate to"). Working from an office is NOT
      relocation; that's work_arrangement.

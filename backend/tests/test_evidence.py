@@ -547,3 +547,15 @@ def test_c_is_one_of_the_languages_a_jd_offers() -> None:
         "Java Backend has Java from the stack this JD names; missing one of Python, Ruby. "
         "The JD accepts any one of C, C++, Java, Golang, .net Core."
     )
+
+
+def test_a_german_posting_is_not_us_remote_even_if_called_worldwide() -> None:
+    jd = f"Senior Fullstack Engineer (m/f/d)\nRemote, Leer\n{JAVA_JD}"
+    response = _java_candidate(remote_location="worldwide", location_note="Remote, Leer")
+    out = decide_match(response, jd, PROFILES)
+    assert out.skip_reason == "Remote only outside the US (Remote, Leer)."
+    assert out.recommended_resume_type_id is None
+    for tag in ("(m/w/d)", "(w/m/x)", "(m/f/div)"):
+        assert decide_match(response, f"Engineer {tag}\n{JAVA_JD}", PROFILES).skip_reason
+    # Without the tag the model's "worldwide" stands.
+    assert decide_match(response, JAVA_JD, PROFILES).skip_reason is None
