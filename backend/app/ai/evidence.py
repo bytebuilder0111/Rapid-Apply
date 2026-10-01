@@ -48,7 +48,7 @@ _DISCIPLINE_WORDS = {
 _LANGUAGE_TOKENS = {
     "python", "java", "go", "c#", "c++", "php", "ruby", "javascript", "typescript", "node",
     "kotlin", "swift", "objective", "scala", "rust", "elixir", "clojure", "dart", "perl",
-    "haskell", "erlang", "net", "zig",
+    "haskell", "erlang", "net", "zig", "c",
 }  # fmt: skip
 # Tools, platforms and datastores that nearly every resume lists. They never count as a
 # JD's core stack, so a match can't rest on incidental overlap like "CI/CD" or "AWS".
@@ -268,16 +268,24 @@ def remote_is_an_option(location_note: str) -> bool:
     return bool(_REMOTE_OPTION.search(location_note.lower()))
 
 
+# A location that only names the country ("Job Locations US"): no office, so not on-site.
+_COUNTRY_ONLY = re.compile(
+    r"^(job\s*)?(locations?:?\s*)?(us|usa|u\.s\.a?\.?|united states( of america)?)\.?$",
+    re.IGNORECASE,
+)
+
+
 def work_arrangement(response: AnalysisResponse) -> str:
     """The model's arrangement, corrected from its own location note: a JD offering remote as
     an option ("Remote or Hybrid work model") is remote, and hybrid/on-site with no location
-    wording found is a guess, so it's unknown (flagged, not skipped)."""
+    wording found, or only a country named, is a guess, so it's unknown (flagged, not
+    skipped)."""
     note = response.location_note.strip()
     if response.work_arrangement not in ("hybrid", "onsite"):
         return response.work_arrangement
     if remote_is_an_option(note):
         return "remote"
-    if note.lower() in _EMPTY_VALUES | {"not stated"}:
+    if note.lower() in _EMPTY_VALUES | {"not stated"} or _COUNTRY_ONLY.match(note):
         return "unknown"
     return response.work_arrangement
 
@@ -350,8 +358,10 @@ def decide_match(
 
     # For server-side jobs the backend language is the standard, so a resume with the JD's
     # backend (all of with_backend, when the JD names one) isn't vetoed by the model's role
-    # guess. Other jobs keep the veto: an Android JD naming Java isn't a Java backend job.
-    backend_decides = bool(backend) and response.role_type in ("backend", "fullstack")
+    # guess. That includes "other" (a general Software Engineer or SDET job the model wouldn't
+    # call backend). Mobile and frontend jobs keep the veto: an Android JD naming Java isn't a
+    # Java backend job; data and DevOps jobs go by the discipline rule below.
+    backend_decides = bool(backend) and response.role_type in ("backend", "fullstack", "other")
     # A different discipline (a Data Engineer job asking only for Python): sharing the stack
     # doesn't make a software engineering resume fit, so the model's role verdict is final.
     other_discipline = response.role_type in _DISCIPLINE_WORDS

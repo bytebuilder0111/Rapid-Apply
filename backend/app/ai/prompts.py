@@ -21,7 +21,7 @@ def build_resume_prompt(resume_text: str) -> str:
     return f"Resume:\n{resume_text.strip()}"
 
 
-PROMPT_VERSION = "jd-analysis-v9"
+PROMPT_VERSION = "jd-analysis-v10"
 
 SYSTEM_PROMPT = """You are a technical recruiter's assistant. You assess a job description
 against each of a client's resumes. Each resume is given as an id, a name, a short summary,
@@ -30,7 +30,9 @@ strict. Return:
 
 1. jd_summary: 30 to 50 words of plain English: the role, seniority, core stack, and domain.
 2. role_type: what kind of engineer the job really hires, judged from its title and main
-   responsibilities: backend, fullstack, mobile, frontend, data, devops, or other.
+   responsibilities: backend, fullstack, mobile, frontend, data, devops, or other. A general
+   "Software Engineer" job building a product's server-side code (no front-end, mobile, data
+   or infrastructure focus) is backend.
    Location facts, read only from what the JD says (title, location line, body). Ignore
    pasted page furniture: application forms, job-alert sign-ups, cookie banners, "other jobs"
    lists and footers. A "Location (city, state or zip code)" form field there is the visitor's,
@@ -40,7 +42,8 @@ strict. Return:
      offered ("Remote or Hybrid", "Remote/On-site", "open to remote"); "hybrid" if some
      regular in-office days are
      always required, or if you must live within commuting distance of an office; "onsite" if
-     office-based; "unknown" if the JD doesn't say.
+     office-based; "unknown" if the JD doesn't say. A location line that only names a
+     country (e.g. "Job Locations US") doesn't make a job on-site: that alone is "unknown".
    - remote_location: where a remote role may be worked from: "us" if US-based candidates
      can take it (US only, specific US states or time zones, or a region that includes the
      US like "North America" or "Americas"); "worldwide" if anywhere; "non_us" if it's

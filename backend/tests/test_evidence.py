@@ -410,6 +410,17 @@ def test_office_based_with_no_location_stated_is_not_skipped() -> None:
     assert out.work_arrangement == "unknown"
 
 
+def test_a_location_naming_only_the_country_is_not_on_site() -> None:
+    for note in ("Job Locations US", "Job LocationsUS", "United States"):
+        response = _java_candidate(work_arrangement="onsite", location_note=note)
+        out = decide_match(response, JAVA_JD, PROFILES)
+        assert out.skip_reason is None
+        assert out.work_arrangement == "unknown"
+    # A city is still an office.
+    response = _java_candidate(work_arrangement="onsite", location_note="Austin, TX, US")
+    assert decide_match(response, JAVA_JD, PROFILES).skip_reason is not None
+
+
 def test_no_language_named_picks_the_resume_with_most_of_the_jds_tools() -> None:
     jd = "Senior backend engineer: microservices on Kubernetes and AWS, PostgreSQL, Kafka."
     checks = [_check(p["id"], fit=0.9 if p["id"] == "python" else 0.6) for p in LAKEYTH]
@@ -514,4 +525,25 @@ def test_no_language_data_job_is_not_given_a_software_resume() -> None:
     assert out.reasoning == (
         "None of your resumes is for this kind of role (a data job), and the JD doesn't name "
         "a programming language."
+    )
+
+
+# The Frontdoor JD: two option lists, scripting and main languages; "C" belongs to the second.
+FRONTDOOR_JD = """Software Engineer, product focused.
+Basic scripting skill in Shell, Python, or Ruby
+Basic skills in languages, such as C, C++, Java, Golang, .net Core"""
+
+
+def test_c_is_one_of_the_languages_a_jd_offers() -> None:
+    # The model calls a general Software Engineer job "other" and no resume the same role.
+    response = _response(
+        role_type="other",
+        core=["Python", "Ruby", "C", "C++", "Java", "Golang", ".net Core"],
+        checks=_all_checks(java=_check("java", same_role=False, fit=0.6)),
+    )
+    out = decide_match(response, FRONTDOOR_JD, PROFILES)
+    assert out.recommended_resume_type_id == "java"
+    assert out.reasoning == (
+        "Java Backend has Java from the stack this JD names; missing one of Python, Ruby. "
+        "The JD accepts any one of C, C++, Java, Golang, .net Core."
     )
