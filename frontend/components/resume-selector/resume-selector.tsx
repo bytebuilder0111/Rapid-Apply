@@ -121,7 +121,7 @@ function AnalyzingPanel({ phase }: { phase: AnalyzePhase }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Loader2 className="size-4 animate-spin" />
-          {phase === "checking" ? "Checking for duplicates..." : "Analyzing..."}
+          <span>{phase === "checking" ? "Checking for duplicates..." : "Analyzing..."}</span>
         </CardTitle>
         <CardDescription>
           {wakingUp
@@ -392,7 +392,9 @@ export function ResumeSelector() {
             <div className="flex gap-2">
               <Button type="submit" disabled={isAnalyzing}>
                 {isAnalyzing && <Loader2 className="size-4 animate-spin" />}
-                {!isAnalyzing ? "Analyze" : phase === "checking" ? "Checking duplicates..." : "Analyzing..."}
+                <span>
+                  {!isAnalyzing ? "Analyze" : phase === "checking" ? "Checking duplicates..." : "Analyzing..."}
+                </span>
               </Button>
               {/* All three are always shown and unlock in order: a matched analysis enables the
                   question, and confirming it enables recording (only applied jobs are recorded). */}
@@ -402,8 +404,10 @@ export function ResumeSelector() {
                 disabled={!canConfirm || applied}
                 onClick={() => setAppliedTo(analyzeOutput)}
               >
+                {/* Text in its own span: page translators (Chrome Translate) replace bare text
+                    nodes, and React then crashes inserting the icon next to them. */}
                 {applied && <CheckCircle2 className="size-4" />}
-                Did you apply to this job?
+                <span>Did you apply to this job?</span>
               </Button>
               <Button type="button" variant="outline" disabled={!applied} onClick={handleSubmit(record)}>
                 Record to Sheet
@@ -431,19 +435,19 @@ export function ResumeSelector() {
             <ResultCard result={analyzeOutput.result} resumeName={resumeName} />
             <p className="text-xs text-muted-foreground">
               {analyzeOutput.result.skip_reason ? (
-                "A skipped job can't be saved."
+                <span key="skipped">A skipped job can&apos;t be saved.</span>
               ) : isDismatched(analyzeOutput.result) ? (
-                "A Dismatched JD can't be saved."
+                <span key="dismatched">A Dismatched JD can&apos;t be saved.</span>
               ) : appliedTo === analyzeOutput ? (
-                <>
+                <span key="applied">
                   Not recorded yet: click <span className="font-medium">Record to Sheet</span> to add it to
                   the profile&apos;s Google Sheet.
-                </>
+                </span>
               ) : (
-                <>
+                <span key="not-applied">
                   Not recorded yet: once you&apos;ve applied, click{" "}
                   <span className="font-medium">Did you apply to this job?</span>
-                </>
+                </span>
               )}
             </p>
           </div>
