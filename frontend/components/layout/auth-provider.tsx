@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 
 import { toast } from "sonner";
 
-import { api, SESSION_ENDED_EVENT } from "@/lib/api";
+import { api, ApiError, SESSION_ENDED_EVENT } from "@/lib/api";
 import { setAccessToken, type UserOut } from "@/lib/auth";
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated";
@@ -21,6 +21,9 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const SESSION_CHECK_MS = 60_000;
+// Restoring the session on page load: a free-tier API can take ~a minute to wake up.
+const RESTORE_ATTEMPTS = 6;
+const RESTORE_RETRY_MS = 10_000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserOut | null>(null);
@@ -28,8 +31,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .post<LoginResponse>("/auth/refresh", undefined, { skipAuth: true })
+    // Only a 401 means there's no session. Other failures (the API waking up from sleep, a
+    // timeout) are retried for a while rather than sending the user back to the login page.
+    const restore = async () => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await api.post<LoginResponse>("/auth/refresh", undefined, { skipAuth: true });
+        } catch (error) {
+          const noSession = error instanceof ApiError && error.status === 401;
+          if (noSession || attempt >= RESTORE_ATTEMPTS || cancelled) throw error;
+          await new Promise((resolve) => setTimeout(resolve, RESTORE_RETRY_MS));
+        }
+      }
+    };
+    restore()
       .then((data) => {
         if (cancelled) return;
         setAccessToken(data.access_token);

@@ -71,6 +71,8 @@ export const SESSION_ENDED_EVENT = "session-ended";
 
 let refreshPromise: Promise<string | null> | null = null;
 
+/** The new access token, or null once the server says the session is over (401). Any other
+ * failure (the API waking up, a timeout, a 5xx) is thrown: it's not a reason to sign out. */
 function refreshAccessToken(): Promise<string | null> {
   refreshPromise ??= rawRequest<{ access_token: string }>("/auth/refresh", {
     method: "POST",
@@ -80,7 +82,8 @@ function refreshAccessToken(): Promise<string | null> {
       setAccessToken(data.access_token);
       return data.access_token;
     })
-    .catch(() => {
+    .catch((error) => {
+      if (!(error instanceof ApiError && error.status === 401)) throw error;
       setAccessToken(null);
       return null;
     })
