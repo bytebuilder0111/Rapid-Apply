@@ -559,3 +559,13 @@ def test_a_german_posting_is_not_us_remote_even_if_called_worldwide() -> None:
         assert decide_match(response, f"Engineer {tag}\n{JAVA_JD}", PROFILES).skip_reason
     # Without the tag the model's "worldwide" stands.
     assert decide_match(response, JAVA_JD, PROFILES).skip_reason is None
+
+
+def test_no_language_job_no_resume_fits_is_declined() -> None:
+    # Airbus "Senior Systems Engineer" (satellites, MBSE, DOORS): no language, no tool in
+    # common, and the model gave every resume a different role and 0 fit.
+    jd = "Senior Systems Engineer for satellite flight software: requirements, MBSE, DOORS."
+    checks = [_check(p["id"], same_role=False, fit=0.0) for p in LAKEYTH]
+    out = decide_match(_response(role_type="other", core=[], checks=checks), jd, LAKEYTH)
+    assert out.recommended_resume_type_id is None
+    assert out.reasoning == "This JD doesn't name a programming language, and no resume fits it."

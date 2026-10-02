@@ -31,6 +31,8 @@ _EMPTY_VALUES = {"", "null", "none", "n/a", "na", "not specified", "unspecified"
 # role" judgment is overruled: the model's per-resume checks are too unreliable to veto a
 # resume that has nearly everything the JD names.
 STRONG_COVERAGE = 0.75
+# The model's fit a resume needs when it's a different role and the JD names no language.
+MIN_FALLBACK_FIT = 0.3
 # Job types that are a different discipline from backend/full-stack engineering. Such a job
 # only fits a resume that is itself of that discipline, as its name or summary says; the
 # model's per-resume role verdict proved too unstable to decide this.
@@ -218,14 +220,12 @@ def _unnamed_language_pick(
     """For a JD that names no language: the resume with the most of the tools and platforms
     the JD names (Kubernetes, AWS, PostgreSQL...), among those the model judged the same kind
     of role if any; the model's fit breaks ties. (resume, shared tools) or None.
-    A data/DevOps/mobile/frontend job only considers resumes of that kind."""
+    A data/DevOps/mobile/frontend job only considers resumes of that kind. With no resume of
+    the same role, one needs some fit and a tool in common (an aerospace Systems Engineer job
+    fits no software resume)."""
     checks = {c.resume_id: c for c in response.resume_checks}
     if response.role_type in _DISCIPLINE_WORDS:
         resumes = [p for p in resumes if fits_discipline(p, response.role_type)]
-    same_role = [p for p in resumes if p["id"] in checks and checks[p["id"]].same_role]
-    pool = same_role or resumes
-    if not pool:
-        return None
     jd_tools = jd_tokens & _GENERIC_TOKENS
 
     def shared(p: dict) -> list[str]:
@@ -234,6 +234,10 @@ def _unnamed_language_pick(
     def fit(p: dict) -> float:
         return checks[p["id"]].fit if p["id"] in checks else 0.0
 
+    same_role = [p for p in resumes if p["id"] in checks and checks[p["id"]].same_role]
+    pool = same_role or [p for p in resumes if fit(p) >= MIN_FALLBACK_FIT and shared(p)]
+    if not pool:
+        return None
     best = max(pool, key=lambda p: (len(shared(p)), fit(p)))
     return best, shared(best)
 
