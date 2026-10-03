@@ -4,7 +4,7 @@ export type Seniority = "intern" | "junior" | "mid" | "senior" | "lead" | "unkno
 export type WorkArrangement = "remote" | "hybrid" | "onsite" | "unknown";
 export type RemoteLocation = "us" | "worldwide" | "non_us" | "unknown";
 
-export type RoleType = "backend" | "fullstack" | "mobile" | "frontend" | "data" | "devops" | "other";
+export type RoleType = "backend" | "fullstack" | "mobile" | "frontend" | "data" | "devops" | "ai" | "other";
 
 export type AnalysisResult = {
   /** Absent on analyses saved before resume-based matching. */

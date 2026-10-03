@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Seniority = Literal["intern", "junior", "mid", "senior", "lead", "unknown"]
-RoleType = Literal["backend", "fullstack", "mobile", "frontend", "data", "devops", "other"]
+RoleType = Literal["backend", "fullstack", "mobile", "frontend", "data", "devops", "ai", "other"]
 WorkArrangement = Literal["remote", "hybrid", "onsite", "unknown"]
 # Where a remote role may be worked from: "us" (US, or regions that include it such as
 # North America), "worldwide", "non_us" (only other countries/regions), or "unknown".

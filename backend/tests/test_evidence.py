@@ -569,3 +569,37 @@ def test_no_language_job_no_resume_fits_is_declined() -> None:
     out = decide_match(_response(role_type="other", core=[], checks=checks), jd, LAKEYTH)
     assert out.recommended_resume_type_id is None
     assert out.reasoning == "This JD doesn't name a programming language, and no resume fits it."
+
+
+# Epistemix "AI Engineer": Python, FastAPI, SQLAlchemy, Pydantic, plus LLM evaluation and RAG.
+EPISTEMIX_JD = """AI Engineer
+3+ years developing AI/ML applications in production. LLMs, prompt optimization, RAG.
+Required: Python, Pydantic, SQLAlchemy, FastAPI."""
+
+
+def test_an_ai_engineer_job_needs_an_ai_resume() -> None:
+    core = ["Python", "Pydantic", "SQLAlchemy", "FastAPI"]
+    checks = [_check(p["id"], same_role=False, fit=0.3) for p in LAKEYTH]
+    # Whether the model calls it "ai" or (as it often does) "other", software resumes don't fit.
+    for role_type in ("ai", "other"):
+        out = decide_match(
+            _response(role_type=role_type, core=core, checks=checks), EPISTEMIX_JD, LAKEYTH
+        )
+        assert out.role_type == "ai"
+        assert out.recommended_resume_type_id is None
+        assert out.reasoning == (
+            "Python has stack in common with this JD (Python, Pydantic, SQLAlchemy, FastAPI), "
+            "but for a different kind of role than this AI/ML job."
+        )
+
+    ai_resume = {
+        "id": "ai",
+        "name": "AI",
+        "summary": "AI engineer with 5 years building LLM applications and RAG in Python.",
+        "skills": ["Python", "FastAPI", "LangChain"],
+    }
+    checks.append(_check("ai", same_role=True, fit=0.8))
+    out = decide_match(
+        _response(role_type="ai", core=core, checks=checks), EPISTEMIX_JD, [*LAKEYTH, ai_resume]
+    )
+    assert out.recommended_resume_type_id == "ai"

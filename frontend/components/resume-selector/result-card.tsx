@@ -11,6 +11,7 @@ const ROLE_LABEL: Record<RoleType, string> = {
   frontend: "Frontend",
   data: "Data",
   devops: "DevOps",
+  ai: "AI/ML",
   other: "Other",
 };
 

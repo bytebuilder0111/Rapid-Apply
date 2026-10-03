@@ -45,7 +45,21 @@ _DISCIPLINE_WORDS = {
     ),
     "mobile": re.compile(r"\b(ios|android|mobile|react native|flutter)\b"),
     "frontend": re.compile(r"\b(front[- ]?end|ui) (engineer|developer)"),
+    "ai": re.compile(
+        r"\b((ai|ml|llm|genai|gen ai|applied ai|machine learning)[ /-]*"
+        r"(engineer|developer|scientist)|mlops)"
+    ),
 }
+# How the reasoning names those job types.
+_DISCIPLINE_NAMES = {
+    "data": "data", "devops": "DevOps", "mobile": "mobile", "frontend": "frontend",
+    "ai": "AI/ML",
+}  # fmt: skip
+# An AI/ML Engineer title. The model often calls such a job "other", which would let any
+# resume with its language (Python) through.
+_AI_TITLE = re.compile(
+    r"\b(ai|ml|llm|genai|gen ai|applied ai|machine learning)[ /-]*engineer\b", re.I
+)
 # Tokens that make a stack term a programming language (".NET" counts, via C#/.NET resumes).
 _LANGUAGE_TOKENS = {
     "python", "java", "go", "c#", "c++", "php", "ruby", "javascript", "typescript", "node",
@@ -333,6 +347,8 @@ def decide_match(
     response: AnalysisResponse, job_description: str, resumes: list[dict]
 ) -> AnalysisResult:
     response = non_us_by_text(response, job_description)
+    if response.role_type == "other" and _AI_TITLE.search(job_description):
+        response = response.model_copy(update={"role_type": "ai"})
     jd_tokens = _tokens(job_description)
     core = verified_core_stack(response.jd_core_stack, job_description)
 
@@ -400,13 +416,15 @@ def decide_match(
     recommended, confidence = None, 0.0
     skip = skip_reason(response)
     stack = ", ".join(core)
+    role_name = _DISCIPLINE_NAMES.get(response.role_type, response.role_type)
     if skip:
         reasoning = f"Skipped: {skip}"
     elif not core:
         pick = _unnamed_language_pick(resumes, jd_tokens, response)
         if pick is None and response.role_type in _DISCIPLINE_WORDS:
+            article = "an" if response.role_type == "ai" else "a"
             reasoning = (
-                f"None of your resumes is for this kind of role (a {response.role_type} job), "
+                f"None of your resumes is for this kind of role ({article} {role_name} job), "
                 "and the JD doesn't name a programming language."
             )
         elif pick is None:
@@ -438,7 +456,7 @@ def decide_match(
         verb = "has" if len(with_backend) == 1 else "have"
         reasoning = (
             f"{names} {verb} stack in common with this JD ({stack}), "
-            f"but for a different kind of role than this {response.role_type} job."
+            f"but for a different kind of role than this {role_name} job."
         )
     else:
         best, overlap, coverage, _, missing = best_of(candidates)

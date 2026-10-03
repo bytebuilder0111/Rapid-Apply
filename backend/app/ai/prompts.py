@@ -21,7 +21,7 @@ def build_resume_prompt(resume_text: str) -> str:
     return f"Resume:\n{resume_text.strip()}"
 
 
-PROMPT_VERSION = "jd-analysis-v11"
+PROMPT_VERSION = "jd-analysis-v12"
 
 SYSTEM_PROMPT = """You are a technical recruiter's assistant. You assess a job description
 against each of a client's resumes. Each resume is given as an id, a name, a short summary,
@@ -30,9 +30,10 @@ strict. Return:
 
 1. jd_summary: 30 to 50 words of plain English: the role, seniority, core stack, and domain.
 2. role_type: what kind of engineer the job really hires, judged from its title and main
-   responsibilities: backend, fullstack, mobile, frontend, data, devops, or other. A general
+   responsibilities: backend, fullstack, mobile, frontend, data, devops, ai, or other. A general
    "Software Engineer" job building a product's server-side code (no front-end, mobile, data
-   or infrastructure focus) is backend.
+   or infrastructure focus) is backend. An AI/ML Engineer job, whose main work is building
+   LLM, ML or other AI systems (prompting, model evaluation, RAG, training), is ai.
    Location facts, read only from what the JD says (title, location line, body). Ignore
    pasted page furniture: application forms, job-alert sign-ups, cookie banners, "other jobs"
    lists and footers. A "Location (city, state or zip code)" form field there is the visitor's,
