@@ -603,3 +603,17 @@ def test_an_ai_engineer_job_needs_an_ai_resume() -> None:
         _response(role_type="ai", core=core, checks=checks), EPISTEMIX_JD, [*LAKEYTH, ai_resume]
     )
     assert out.recommended_resume_type_id == "ai"
+
+
+def test_a_jd_not_in_english_is_skipped() -> None:
+    # redbee, Buenos Aires: the model called it remote "worldwide" half the time.
+    jd = (
+        "Backend Developer Semi-Senior | Java. Buenos Aires / Remote. Somos redbee, una empresa "
+        "argentina de tecnología. Implementar aplicaciones backend utilizando Java 21 + Spring "
+        "Boot 3, aplicando buenas prácticas. Trabajamos de forma remote-first y con flexibilidad."
+    )
+    response = _java_candidate(remote_location="worldwide", location_note="Remote")
+    out = decide_match(response, jd, PROFILES)
+    assert out.skip_reason == "The JD isn't in English, so it's not a US job."
+    assert out.recommended_resume_type_id is None
+    assert decide_match(response, JAVA_JD, PROFILES).skip_reason is None

@@ -321,6 +321,27 @@ def non_us_by_text(response: AnalysisResponse, job_description: str) -> Analysis
     return response.model_copy(update={"remote_location": "non_us"})
 
 
+# Common short words of English and of the languages non-US postings come in (Spanish,
+# Portuguese, German, French, Italian). A JD with more of the latter isn't a US job: the
+# model calls a Spanish "remote-first" posting from Buenos Aires "worldwide" half the time.
+_ENGLISH_WORDS = {
+    "the", "and", "of", "to", "you", "with", "for", "our", "we", "is", "are", "will", "your",
+}  # fmt: skip
+_FOREIGN_WORDS = {
+    "de", "la", "el", "los", "las", "para", "con", "una", "que", "del", "por", "y", "en",
+    "da", "do", "em", "com", "você", "und", "der", "die", "das", "mit", "für", "wir", "ist",
+    "sie", "eine", "le", "les", "et", "des", "pour", "avec", "vous", "nous", "est", "il", "di",
+    "per", "che",
+}  # fmt: skip
+
+
+def written_in_english(job_description: str) -> bool:
+    words = re.findall(r"[^\W\d_]+", job_description.lower())
+    english = sum(w in _ENGLISH_WORDS for w in words)
+    foreign = sum(w in _FOREIGN_WORDS for w in words)
+    return foreign <= english
+
+
 def skip_reason(response: AnalysisResponse) -> str | None:
     """The client only takes senior-enough, US-remote jobs. A reason to skip the job, or None.
     A JD that doesn't state its location isn't skipped (the UI flags it instead)."""
@@ -415,6 +436,8 @@ def decide_match(
 
     recommended, confidence = None, 0.0
     skip = skip_reason(response)
+    if not skip and not written_in_english(job_description):
+        skip = "The JD isn't in English, so it's not a US job."
     stack = ", ".join(core)
     role_name = _DISCIPLINE_NAMES.get(response.role_type, response.role_type)
     if skip:
