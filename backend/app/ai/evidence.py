@@ -364,12 +364,30 @@ def skip_reason(response: AnalysisResponse) -> str | None:
     return None
 
 
+_SOFTWARE_TITLE = re.compile(r"back[- ]?end|full[- ]?stack|software (engineer|developer)")
+
+
+def title_discipline(position_name: str) -> str | None:
+    """The job type a position title names outright ("Senior Data Engineer" -> data), or None.
+    The title is the one thing the bidder always types in; the pasted JD may be incomplete."""
+    title = position_name.lower()
+    # "Backend Platform Engineer", "Full-Stack Engineer (Mobile & Web)": the AI decides.
+    if _SOFTWARE_TITLE.search(title):
+        return None
+    for role_type in ("ai", "data", "devops", "mobile", "frontend"):
+        if _DISCIPLINE_WORDS[role_type].search(title):
+            return role_type
+    return None
+
+
 def decide_match(
-    response: AnalysisResponse, job_description: str, resumes: list[dict]
+    response: AnalysisResponse, job_description: str, resumes: list[dict], position_name: str = ""
 ) -> AnalysisResult:
     response = non_us_by_text(response, job_description)
     if response.role_type == "other" and _AI_TITLE.search(job_description):
         response = response.model_copy(update={"role_type": "ai"})
+    if titled := title_discipline(position_name):
+        response = response.model_copy(update={"role_type": titled})
     jd_tokens = _tokens(job_description)
     core = verified_core_stack(response.jd_core_stack, job_description)
 
@@ -436,6 +454,10 @@ def decide_match(
 
     recommended, confidence = None, 0.0
     skip = skip_reason(response)
+    if not response.is_job_description:
+        skip = (
+            "This isn't a job description: paste the posting's full text, not a link or page menu."
+        )
     if not skip and not written_in_english(job_description):
         skip = "The JD isn't in English, so it's not a US job."
     stack = ", ".join(core)

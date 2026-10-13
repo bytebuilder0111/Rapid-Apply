@@ -54,6 +54,7 @@ def _check(pid: str, *, same_role: bool, fit: float) -> ResumeCheck:
 
 def _response(**overrides) -> AnalysisResponse:
     base = {
+        "is_job_description": True,
         "jd_summary": "Senior backend role building Python APIs.",
         "role_type": "backend",
         "work_arrangement": "remote",
@@ -85,7 +86,7 @@ def test_prompt_lists_each_resume_summary_and_skills() -> None:
 def test_response_schema_is_valid_for_openai_and_summarizes_first() -> None:
     schema = to_strict_json_schema(AnalysisResponse)
     props = list(schema["properties"])
-    assert props[:2] == ["jd_summary", "role_type"]
+    assert props[:3] == ["is_job_description", "jd_summary", "role_type"]
     assert props.index("location_note") < props.index("resume_checks")
     assert props[-1] == "resume_checks"
     assert set(props) <= set(schema["required"])

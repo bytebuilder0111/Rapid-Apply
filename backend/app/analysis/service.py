@@ -164,6 +164,7 @@ async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: Ana
         model=ai_settings.model,
         job_description=payload.job_description,
         resumes=resumes,
+        position_name=payload.position_name,
     )
 
 

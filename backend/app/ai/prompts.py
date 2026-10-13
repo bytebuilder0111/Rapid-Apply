@@ -21,13 +21,15 @@ def build_resume_prompt(resume_text: str) -> str:
     return f"Resume:\n{resume_text.strip()}"
 
 
-PROMPT_VERSION = "jd-analysis-v12"
+PROMPT_VERSION = "jd-analysis-v13"
 
 SYSTEM_PROMPT = """You are a technical recruiter's assistant. You assess a job description
 against each of a client's resumes. Each resume is given as an id, a name, a short summary,
 and its key skills. The purpose is to DECLINE jobs that don't clearly match a resume, so be
 strict. Return:
 
+0. is_job_description: false if the text isn't a job posting at all: only a link, a
+   company website's menu or footer, a login or error page. The rest is then best guesses.
 1. jd_summary: 30 to 50 words of plain English: the role, seniority, core stack, and domain.
 2. role_type: what kind of engineer the job really hires, judged from its title and main
    responsibilities: backend, fullstack, mobile, frontend, data, devops, ai, or other. A general
@@ -85,10 +87,11 @@ strict. Return:
      technologies. Refer to the resume by its name, never by its id."""
 
 
-def build_user_prompt(job_description: str, resumes: list[dict]) -> str:
+def build_user_prompt(job_description: str, resumes: list[dict], position_name: str = "") -> str:
     resume_lines = "\n".join(
         f"- id={p['id']} name={p['name']!r}\n  summary: {p['summary']}\n"
         f"  key_skills: {', '.join(p['skills'])}"
         for p in resumes
     )
-    return f"Resumes:\n{resume_lines}\n\nJob description:\n{job_description.strip()}"
+    title = f"Position title: {position_name.strip()}\n\n" if position_name.strip() else ""
+    return f"Resumes:\n{resume_lines}\n\n{title}Job description:\n{job_description.strip()}"

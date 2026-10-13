@@ -55,6 +55,7 @@ class AnalysisResponse(BaseModel):
     reads the JD first, then writes a check for every resume. It doesn't pick the winner:
     app/ai/evidence.py does, from these checks plus text evidence."""
 
+    is_job_description: bool
     jd_summary: str
     role_type: RoleType
     work_arrangement: WorkArrangement

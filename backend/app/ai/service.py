@@ -85,7 +85,12 @@ class AnalysisOutcome:
 
 
 async def analyze_job_description(
-    *, api_key: str, model: str, job_description: str, resumes: list[dict]
+    *,
+    api_key: str,
+    model: str,
+    job_description: str,
+    resumes: list[dict],
+    position_name: str = "",
 ) -> AnalysisOutcome:
     """resumes: [{"id", "name", "summary", "skills"}, ...] — the chosen profile's active resume
     types that have an uploaded summary. One call summarizes the JD and assesses every resume;
@@ -98,7 +103,7 @@ async def analyze_job_description(
     client = AsyncOpenAI(api_key=api_key)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_user_prompt(job_description, resumes)},
+        {"role": "user", "content": build_user_prompt(job_description, resumes, position_name)},
     ]
 
     attempts = 0
@@ -120,7 +125,7 @@ async def analyze_job_description(
             assert parsed is not None
             tokens = completion.usage.total_tokens if completion.usage else None
             outcome = AnalysisOutcome(
-                decide_match(parsed, job_description, resumes), tokens, latency_ms
+                decide_match(parsed, job_description, resumes, position_name), tokens, latency_ms
             )
             outcome.model = model
             return outcome

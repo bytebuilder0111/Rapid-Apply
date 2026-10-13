@@ -37,6 +37,7 @@ def _check(pid: str, *, same_role: bool = True, fit: float = 0.9) -> ResumeCheck
 
 def _response(*, core: list[str], checks: list[ResumeCheck], **overrides) -> AnalysisResponse:
     base = {
+        "is_job_description": True,
         "jd_summary": "s",
         "role_type": "backend",
         "work_arrangement": "remote",
@@ -617,3 +618,25 @@ def test_a_jd_not_in_english_is_skipped() -> None:
     assert out.skip_reason == "The JD isn't in English, so it's not a US job."
     assert out.recommended_resume_type_id is None
     assert decide_match(response, JAVA_JD, PROFILES).skip_reason is None
+
+
+def test_the_position_title_sets_the_job_type() -> None:
+    # Qventus: the pasted "JD" was only the company site's menu; the model guessed "backend"
+    # and the no-language fallback picked a resume for a "Senior Data Engineer" job.
+    checks = [_check(p["id"], same_role=False, fit=0.3) for p in LAKEYTH]
+    response = _response(role_type="backend", core=[], checks=checks)
+    out = decide_match(response, "Kubernetes, AWS, PostgreSQL.", LAKEYTH, "Senior Data Engineer")
+    assert out.role_type == "data"
+    assert out.recommended_resume_type_id is None
+    # A software title leaves the model's verdict alone.
+    out = decide_match(response, "Kubernetes, AWS.", LAKEYTH, "Backend Platform Engineer")
+    assert out.role_type == "backend"
+
+
+def test_text_that_is_not_a_job_description_is_skipped() -> None:
+    response = _java_candidate(is_job_description=False)
+    out = decide_match(response, "https://job-boards.greenhouse.io/ondofinance/jobs/1", PROFILES)
+    assert out.skip_reason == (
+        "This isn't a job description: paste the posting's full text, not a link or page menu."
+    )
+    assert out.recommended_resume_type_id is None
