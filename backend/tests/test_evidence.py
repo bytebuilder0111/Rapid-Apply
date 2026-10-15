@@ -43,6 +43,7 @@ def _response(*, core: list[str], checks: list[ResumeCheck], **overrides) -> Ana
         "work_arrangement": "remote",
         "remote_location": "us",
         "relocation_required": False,
+        "in_person_interview": "no",
         "location_note": "Remote (US)",
         "jd_core_stack": core,
         "main_backend_skill": core[0] if core else "Not specified",
@@ -640,3 +641,13 @@ def test_text_that_is_not_a_job_description_is_skipped() -> None:
         "This isn't a job description: paste the posting's full text, not a link or page menu."
     )
     assert out.recommended_resume_type_id is None
+
+
+def test_a_required_in_person_interview_is_skipped() -> None:
+    # Glansa: remote contract, "In-Person Client Interviews required in Charlotte, NC or NY".
+    out = decide_match(_java_candidate(in_person_interview="required"), JAVA_JD, PROFILES)
+    assert out.skip_reason == "Requires an in-person interview."
+    assert out.recommended_resume_type_id is None
+    # "An in-person interview may be required" still passes.
+    out = decide_match(_java_candidate(in_person_interview="possible"), JAVA_JD, PROFILES)
+    assert out.skip_reason is None

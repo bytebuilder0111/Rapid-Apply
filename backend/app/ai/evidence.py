@@ -361,6 +361,8 @@ def skip_reason(response: AnalysisResponse) -> str | None:
         return f"Remote only outside the US{detail}."
     if response.relocation_required:
         return f"Requires relocation{detail}."
+    if response.in_person_interview == "required":
+        return "Requires an in-person interview."
     return None
 
 
@@ -520,6 +522,7 @@ def decide_match(
         work_arrangement=work_arrangement(response),
         remote_location=response.remote_location,
         relocation_required=response.relocation_required,
+        in_person_interview=response.in_person_interview,
         location_note=response.location_note,
         skip_reason=skip,
         jd_core_stack=core,

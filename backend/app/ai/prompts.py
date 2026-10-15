@@ -21,7 +21,7 @@ def build_resume_prompt(resume_text: str) -> str:
     return f"Resume:\n{resume_text.strip()}"
 
 
-PROMPT_VERSION = "jd-analysis-v13"
+PROMPT_VERSION = "jd-analysis-v14"
 
 SYSTEM_PROMPT = """You are a technical recruiter's assistant. You assess a job description
 against each of a client's resumes. Each resume is given as an id, a name, a short summary,
@@ -58,6 +58,10 @@ strict. Return:
    - relocation_required: true only if the JD explicitly says the candidate must relocate or
      move (e.g. "relocation required", "must relocate to"). Working from an office is NOT
      relocation; that's work_arrangement.
+   - in_person_interview: "required" if hiring definitely includes an in-person or on-site
+     interview or onboarding (e.g. "In-Person Client Interviews required in Charlotte, NC",
+     "finalists will attend an onsite interview at our SF office"); "possible" if it only may
+     ("an in-person interview may be required", "video or in-person interview"); else "no".
    - location_note: the JD's own location wording in at most 10 words (e.g. "Remote (US)",
      "Hybrid, 3 days/week in Austin, TX"), or "Not stated".
 3. jd_core_stack: the programming languages and frameworks the JD itself explicitly names as

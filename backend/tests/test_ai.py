@@ -60,6 +60,7 @@ def _response(**overrides) -> AnalysisResponse:
         "work_arrangement": "remote",
         "remote_location": "us",
         "relocation_required": False,
+        "in_person_interview": "no",
         "location_note": "Remote (US)",
         "jd_core_stack": ["Python"],
         "main_backend_skill": "Python",

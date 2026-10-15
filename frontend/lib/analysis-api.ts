@@ -13,6 +13,7 @@ export type AnalysisResult = {
   work_arrangement?: WorkArrangement | null;
   remote_location?: RemoteLocation | null;
   relocation_required?: boolean | null;
+  in_person_interview?: "required" | "possible" | "no" | null;
   /** The JD's own location wording, e.g. "Remote (US)". */
   location_note?: string | null;
   /** Why the job was skipped (junior/intern, or not US remote); such jobs can't be saved. */
