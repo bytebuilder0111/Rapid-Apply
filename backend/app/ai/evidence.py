@@ -282,6 +282,10 @@ _REMOTE_OPTION = re.compile(
 )
 
 
+# "Kirkland, WA (HQ) - remote-first, hybrid": remote is the default, the office optional.
+_REMOTE_FIRST = re.compile(r"\bremote[- ]first\b", re.IGNORECASE)
+
+
 def remote_is_an_option(location_note: str) -> bool:
     return bool(_REMOTE_OPTION.search(location_note.lower()))
 
@@ -390,6 +394,8 @@ def decide_match(
         response = response.model_copy(update={"role_type": "ai"})
     if titled := title_discipline(position_name):
         response = response.model_copy(update={"role_type": titled})
+    if response.work_arrangement == "hybrid" and _REMOTE_FIRST.search(job_description):
+        response = response.model_copy(update={"work_arrangement": "remote"})
     jd_tokens = _tokens(job_description)
     core = verified_core_stack(response.jd_core_stack, job_description)
 

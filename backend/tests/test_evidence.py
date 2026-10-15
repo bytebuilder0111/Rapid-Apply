@@ -651,3 +651,14 @@ def test_a_required_in_person_interview_is_skipped() -> None:
     # "An in-person interview may be required" still passes.
     out = decide_match(_java_candidate(in_person_interview="possible"), JAVA_JD, PROFILES)
     assert out.skip_reason is None
+
+
+def test_a_remote_first_company_is_remote_even_if_called_hybrid() -> None:
+    # hussh: "Location: Kirkland, WA (HQ) - remote-first, hybrid".
+    jd = "Location: Kirkland, WA (HQ) - remote-first, hybrid. " + JAVA_JD
+    response = _java_candidate(work_arrangement="hybrid", location_note="Kirkland, WA (HQ)")
+    out = decide_match(response, jd, PROFILES)
+    assert out.skip_reason is None
+    assert out.work_arrangement == "remote"
+    # Plain hybrid is still skipped.
+    assert decide_match(response, JAVA_JD, PROFILES).skip_reason is not None

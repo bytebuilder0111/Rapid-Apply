@@ -21,7 +21,7 @@ def build_resume_prompt(resume_text: str) -> str:
     return f"Resume:\n{resume_text.strip()}"
 
 
-PROMPT_VERSION = "jd-analysis-v14"
+PROMPT_VERSION = "jd-analysis-v15"
 
 SYSTEM_PROMPT = """You are a technical recruiter's assistant. You assess a job description
 against each of a client's resumes. Each resume is given as an id, a name, a short summary,
@@ -42,7 +42,8 @@ strict. Return:
    not the job's.
    - work_arrangement: "remote" if the job can be done fully remotely (occasional travel,
      e.g. quarterly offsites, is still remote), including when remote is one of the options
-     offered ("Remote or Hybrid", "Remote/On-site", "open to remote"); "hybrid" if some
+     offered ("Remote or Hybrid", "Remote/On-site", "open to remote") or the company is
+     "remote-first" (even "remote-first, hybrid"); "hybrid" if some
      regular in-office days are
      always required, or if you must live within commuting distance of an office; "onsite" if
      office-based; "unknown" if the JD doesn't say. A location line that only names a
