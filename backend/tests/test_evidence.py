@@ -662,3 +662,24 @@ def test_a_remote_first_company_is_remote_even_if_called_hybrid() -> None:
     assert out.work_arrangement == "remote"
     # Plain hybrid is still skipped.
     assert decide_match(response, JAVA_JD, PROFILES).skip_reason is not None
+
+
+def test_node_named_beside_another_backend_is_a_backend_too() -> None:
+    # EXL: "backend systems using Node.js, Express.js, Python (Flask, Django, FastAPI)" with a
+    # React/TypeScript front end. Node.js was treated as front-end work and only Python fit.
+    jd = (
+        "Full Stack Engineer. Frontend: React, TypeScript. Backend: Node.js, Express.js, "
+        "Python (Flask, Django, FastAPI)."
+    )
+    core = ["React", "TypeScript", "Node.js", "Express.js", "Python"]
+    resumes = [
+        {**p, "skills": [*p["skills"], "Express.js"]} if p["id"] == "node" else p for p in LAKEYTH
+    ]
+    response = _response(
+        role_type="fullstack", core=core, checks=[_check(p["id"], fit=0.7) for p in resumes]
+    )
+    out = decide_match(response, jd, resumes)
+    assert out.recommended_resume_type_id == "node"
+    # A title naming the backend decides between two: a "Python Full Stack Engineer" job.
+    out = decide_match(response, jd, resumes, "Senior Python Full Stack Engineer")
+    assert out.recommended_resume_type_id == "python"

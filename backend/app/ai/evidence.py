@@ -139,7 +139,13 @@ def _backend(families: set[str]) -> set[str]:
 
 
 def jd_backend(languages: list[str]) -> set[str]:
-    return _backend(_families(set().union(*(_tokens(t) for t in languages))))
+    tokens = set().union(*(_tokens(t) for t in languages))
+    backend = _backend(_families(tokens))
+    # Node.js itself is a server runtime, not front-end work: "backend systems using Node.js,
+    # Express.js, Python" accepts a Node backend as much as a Python one.
+    if "node" in tokens:
+        backend.add(_JS_FAMILY)
+    return backend
 
 
 def resume_backend(resume: dict) -> set[str]:
@@ -455,10 +461,23 @@ def decide_match(
 
     candidates = [s for s in with_backend if role_ok(s[0], s[2])]
 
+    # The backend the job title names (".NET Lead Full Stack Engineer"), from the position
+    # field and the JD's first line. With two backends in the JD, that one wins.
+    first_line = re.split(r"\n|\.\s", job_description.strip(), maxsplit=1)[0]
+    title_backend = _families(_tokens(f"{position_name} {first_line}")) & backend
+
     def best_of(pool):
-        # Most of the stack first; then more of the named terms (e.g. two of the languages a
-        # JD accepts beats one), and only then the model's fit.
-        return max(pool, key=lambda s: (s[2], len(s[1]), fit(s[0])))
+        # The title's backend first; then most of the stack; then more of the named terms
+        # (e.g. two of the languages a JD accepts beats one), and only then the model's fit.
+        return max(
+            pool,
+            key=lambda s: (
+                bool(resume_backend(s[0]) & title_backend),
+                s[2],
+                len(s[1]),
+                fit(s[0]),
+            ),
+        )
 
     recommended, confidence = None, 0.0
     skip = skip_reason(response)
