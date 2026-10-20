@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import re
 from datetime import UTC, date, datetime, time
@@ -7,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import analyze_job_description
-from app.analysis.duplicates import Entry, find_duplicate
+from app.analysis.duplicates import Entry, company_cooldown, find_duplicate
 from app.analysis.models import Analysis, JobHistory
 from app.analysis.schemas import (
     AnalysisOut,
@@ -59,22 +60,18 @@ async def _resumes_context(db: AsyncSession, profile_id: UUID) -> list[dict]:
     ]
 
 
-async def _find_duplicate(
-    db: AsyncSession,
-    *,
-    user: User,
-    client_id: UUID,
-    profile: Profile,
-    payload,
-    include_sheet: bool = True,
-) -> str | None:
-    """Checks the job against this profile's saved analyses, imported history, then its
-    bid sheet. Reading the sheet is the slow part (a Google call), so only the pre-check
-    does it; Analyze and Save re-check the database."""
+async def _db_entries(db: AsyncSession, *, client_id: UUID, profile: Profile) -> list[Entry]:
+    """This profile's saved analyses (with the resume each applied with) and imported history."""
     rows = await db.execute(
         select(
-            Analysis.company_name, Analysis.position_name, Analysis.job_link, Analysis.created_at
-        ).where(Analysis.client_id == client_id, Analysis.profile_id == profile.id)
+            Analysis.company_name,
+            Analysis.position_name,
+            Analysis.job_link,
+            Analysis.created_at,
+            ResumeType.name,
+        )
+        .outerjoin(ResumeType, ResumeType.id == Analysis.selected_resume_type_id)
+        .where(Analysis.client_id == client_id, Analysis.profile_id == profile.id)
     )
     entries = [
         Entry(
@@ -83,8 +80,9 @@ async def _find_duplicate(
             job_link=job_link or "",
             where=f"saved for {profile.name} on {created:%Y-%m-%d}",
             applied_on=created.date(),
+            resume=resume,
         )
-        for company, position, job_link, created in rows.all()
+        for company, position, job_link, created, resume in rows.all()
     ]
     history = await db.execute(
         select(
@@ -106,6 +104,22 @@ async def _find_duplicate(
         )
         for company, position, job_link, applied, source in history.all()
     ]
+    return entries
+
+
+async def _find_duplicate(
+    db: AsyncSession,
+    *,
+    user: User,
+    client_id: UUID,
+    profile: Profile,
+    payload,
+    include_sheet: bool = True,
+) -> str | None:
+    """Checks the job against this profile's saved analyses, imported history, then its
+    bid sheet. Reading the sheet is the slow part (a Google call), so only the pre-check
+    does it; Analyze and Save re-check the database."""
+    entries = await _db_entries(db, client_id=client_id, profile=profile)
     if include_sheet:
         entries += await recorded_jobs(db, client_id=client_id, profile_id=profile.id, user=user)
     return find_duplicate(
@@ -113,8 +127,18 @@ async def _find_duplicate(
         company=payload.company_name,
         position=payload.position_name,
         job_link=payload.job_link,
-        today=datetime.now(UTC).date(),
     )
+
+
+async def _sheet_entries_or_none(
+    db: AsyncSession, *, user: User, client_id: UUID, profile: Profile
+) -> list[Entry]:
+    """The bid sheet's rows for the cooldown check; a Google problem mustn't fail the
+    analysis (recording reports it), so it reads as no rows."""
+    try:
+        return await recorded_jobs(db, client_id=client_id, profile_id=profile.id, user=user)
+    except AppError:
+        return []
 
 
 async def _reject_duplicate(
@@ -159,13 +183,35 @@ async def analyze(db: AsyncSession, *, user: User, client_id: UUID, payload: Ana
     # Before the AI call, so a duplicate costs nothing. The sheet itself was read by the
     # pre-check (check_duplicate) moments ago.
     await _reject_duplicate(db, user=user, client_id=client_id, profile=profile, payload=payload)
-    return await analyze_job_description(
-        api_key=api_key,
-        model=ai_settings.model,
-        job_description=payload.job_description,
-        resumes=resumes,
-        position_name=payload.position_name,
+    # The sheet is read while the AI works (the AI call doesn't use the database session), for
+    # the cooldown: only the resume the AI picks shows whether this company is open again.
+    outcome, sheet = await asyncio.gather(
+        analyze_job_description(
+            api_key=api_key,
+            model=ai_settings.model,
+            job_description=payload.job_description,
+            resumes=resumes,
+            position_name=payload.position_name,
+        ),
+        _sheet_entries_or_none(db, user=user, client_id=client_id, profile=profile),
     )
+    result = outcome.result
+    pick = next((r["name"] for r in resumes if r["id"] == result.recommended_resume_type_id), None)
+    if pick and not result.skip_reason:
+        entries = await _db_entries(db, client_id=client_id, profile=profile) + sheet
+        reason = company_cooldown(
+            entries, company=payload.company_name, resume=pick, today=datetime.now(UTC).date()
+        )
+        if reason:
+            outcome.result = result.model_copy(
+                update={
+                    "skip_reason": reason,
+                    "recommended_resume_type_id": None,
+                    "confidence": 0.0,
+                    "reasoning": f"Skipped: {reason}",
+                }
+            )
+    return outcome
 
 
 async def save_analysis(
@@ -191,6 +237,15 @@ async def save_analysis(
         resume_type = await db.get(ResumeType, selected_resume_type_id)
         if resume_type is None or resume_type.profile_id != profile.id:
             raise AppError("invalid_resume_type", "That resume isn't in this profile", 400)
+        # Another bidder may have applied there with another resume since Analyze.
+        reason = company_cooldown(
+            await _db_entries(db, client_id=client_id, profile=profile),
+            company=payload.company_name,
+            resume=resume_type.name,
+            today=datetime.now(UTC).date(),
+        )
+        if reason:
+            raise AppError("company_cooldown", reason, 409)
 
     record_status = await initial_record_status(
         db, client_id=client_id, profile_id=profile.id, user=user

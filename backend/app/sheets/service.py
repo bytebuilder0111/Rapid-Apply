@@ -299,9 +299,10 @@ async def recorded_jobs(
             position=position,
             job_link=link,
             where=f"row {n} of {where}",
-            applied_on=parse_date(applied[0]) if applied else None,
+            applied_on=parse_date(rest[0]) if rest else None,
+            resume=(rest[1] or None) if len(rest) > 1 else None,
         )
-        for n, (company, position, link, *applied) in rows
+        for n, (company, position, link, *rest) in rows
     ]
 
 

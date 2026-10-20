@@ -169,8 +169,8 @@ class SheetsWriter:
         return (max(numbers) + 1 if numbers else 1), props["timeZone"], props["locale"]
 
     def recorded_jobs(self, spreadsheet_id: str, sheet_name: str) -> list[tuple[int, list]]:
-        """(sheet row number, [company, position, job link, date]) for every data row, from
-        columns B-D and G of the bid-sheet layout (row 1 is the header). Values are read
+        """(sheet row number, [company, position, job link, date, resume]) for every data row,
+        from columns B-D, G and F of the bid-sheet layout (row 1 is the header). Values are read
         unformatted, so a date is its serial number whatever the cell's display format."""
         rows = (
             self._sheets()
@@ -190,7 +190,7 @@ class SheetsWriter:
             cells = (row + [""] * 6)[:6]
             company, position, link = (_cell_text(v) for v in cells[:3])
             if company or position or link:
-                jobs.append((i + 2, [company, position, link, cells[5]]))
+                jobs.append((i + 2, [company, position, link, cells[5], _cell_text(cells[4])]))
         return jobs
 
     def append_row(self, spreadsheet_id: str, sheet_name: str, row: list) -> None:

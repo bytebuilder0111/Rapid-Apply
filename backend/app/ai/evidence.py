@@ -19,6 +19,7 @@ from app.ai.schemas import AnalysisResponse, AnalysisResult
 # Spelling variants treated as the same token when comparing JD and resume text.
 _ALIASES = {
     "golang": "go",
+    "csharp": "c#",
     "nodejs": "node",
     "postgres": "postgresql",
     "reactjs": "react",

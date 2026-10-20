@@ -1,6 +1,12 @@
 from datetime import date
 
-from app.analysis.duplicates import Entry, find_duplicate, normalize_link, parse_date
+from app.analysis.duplicates import (
+    Entry,
+    company_cooldown,
+    find_duplicate,
+    normalize_link,
+    parse_date,
+)
 
 SHEET = [
     Entry(
@@ -73,7 +79,7 @@ def test_company_punctuation_and_possessive_are_ignored() -> None:
     assert reason is not None
 
 
-def test_same_company_within_seven_days_is_turned_away_whatever_the_position() -> None:
+def test_same_company_within_seven_days_only_with_the_same_resume() -> None:
     applied = [
         Entry(
             company="Stripe, LLC",
@@ -81,25 +87,38 @@ def test_same_company_within_seven_days_is_turned_away_whatever_the_position() -
             job_link="https://stripe.com/jobs/1",
             where="row 64 of Bids > Kareem",
             applied_on=date(2026, 9, 24),
+            resume="CSharp",
         )
     ]
 
-    def check(today: date, company: str = "Stripe") -> str | None:
-        return find_duplicate(
-            applied,
-            company=company,
-            position="Backend Engineer",
-            job_link="https://stripe.com/jobs/2",
-            today=today,
-        )
+    def check(today: date, resume: str = "Java", company: str = "Stripe") -> str | None:
+        return company_cooldown(applied, company=company, resume=resume, today=today)
 
     assert check(date(2026, 9, 30)) == (
-        'Already applied to "Stripe, LLC" 6 days ago ("Senior Software Engineer", row 64 of '
-        "Bids > Kareem). Wait 7 days before applying to the same company again."
+        'Applied to "Stripe, LLC" 6 days ago with the CSharp resume ("Senior Software Engineer", '
+        "row 64 of Bids > Kareem); this job would use Java. Within 7 days, only the same resume "
+        "can apply there again."
     )
-    assert check(date(2026, 9, 24)).startswith('Already applied to "Stripe, LLC" today')
+    assert check(date(2026, 9, 24)).startswith('Applied to "Stripe, LLC" today')
+    # The same resume may apply again; "C#" is the "CSharp" resume.
+    assert check(date(2026, 9, 30), resume="CSharp") is None
+    assert check(date(2026, 9, 30), resume="C#") is None
     assert check(date(2026, 10, 1)) is None  # 7 days later
     assert check(date(2026, 9, 30), company="Stripe Climate") is None
+    # Another position at the company is no longer a duplicate by itself.
+    assert (
+        find_duplicate(
+            applied, company="Stripe", position="Backend Engineer", job_link="https://x.io/2"
+        )
+        is None
+    )
+
+
+def test_an_earlier_application_with_an_unknown_resume_still_blocks() -> None:
+    # Imported history has no resume column.
+    applied = [Entry("Stripe", "SWE", "", "Kareem's history", date(2026, 9, 28), resume=None)]
+    reason = company_cooldown(applied, company="Stripe", resume="Java", today=date(2026, 9, 30))
+    assert reason is not None and "with an unknown resume" in reason
 
 
 def test_sheet_dates_are_read_from_serial_numbers_or_text() -> None:

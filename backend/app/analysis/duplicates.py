@@ -1,13 +1,13 @@
 """Duplicate-job matching. A job counts as already recorded when its job link, or its company
-name + position name, matches an earlier entry (a bid-sheet row or a saved analysis). A job at a
-company applied to within the last 7 days is also turned away, whatever the position."""
+name + position name, matches an earlier entry (a bid-sheet row or a saved analysis). Within 7
+days of applying to a company, another job there is only taken with the same resume."""
 
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
-# Days after applying to a company before applying to it again (any position).
+# Days after applying to a company before applying to it with a different resume.
 COMPANY_COOLDOWN_DAYS = 7
 
 # Query parameters that differ between copies of the same posting link: tracking tags, and
@@ -26,6 +26,7 @@ class Entry:
     job_link: str
     where: str  # e.g. "row 12 of Bid Sheet - ALL > Donzell-Auto"
     applied_on: date | None = None
+    resume: str | None = None  # the resume type applied with, e.g. "Java"; None if unknown
 
 
 _DATE_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y")
@@ -91,15 +92,9 @@ def normalize_link(url: str | None) -> str:
 
 
 def find_duplicate(
-    entries: list[Entry],
-    *,
-    company: str,
-    position: str,
-    job_link: str,
-    today: date | None = None,
+    entries: list[Entry], *, company: str, position: str, job_link: str
 ) -> str | None:
-    """A user-facing reason if this job was already recorded, or its company was applied to
-    within the last COMPANY_COOLDOWN_DAYS days (counting today); else None."""
+    """A user-facing reason if this job was already recorded; else None."""
     link = normalize_link(job_link)
     key = (normalize_company(company), normalize_text(position))
     for entry in entries:
@@ -112,22 +107,42 @@ def find_duplicate(
                     f'"{company.strip()}" / "{position.strip()}" is already recorded '
                     f"({entry.where})."
                 )
-    if key[0] and today is not None:
-        recent = [
-            e
-            for e in entries
-            if e.applied_on is not None
-            and 0 <= (today - e.applied_on).days < COMPANY_COOLDOWN_DAYS
-            and normalize_company(e.company) == key[0]
-        ]
-        if recent:
-            last = max(recent, key=lambda e: e.applied_on or date.min)
-            assert last.applied_on is not None
-            days = (today - last.applied_on).days
-            when = "today" if days == 0 else "yesterday" if days == 1 else f"{days} days ago"
-            return (
-                f'Already applied to "{last.company.strip()}" {when} '
-                f'("{last.position.strip()}", {last.where}). Wait {COMPANY_COOLDOWN_DAYS} days '
-                "before applying to the same company again."
-            )
     return None
+
+
+def same_resume(a: str, b: str) -> bool:
+    """ "CSharp" and "C#", "GoLang" and "Go" are the same resume; otherwise names must match."""
+    # Imported here: app.ai.evidence is the one place that knows language names.
+    from app.ai.evidence import _families, _tokens
+
+    fa, fb = _families(_tokens(a)), _families(_tokens(b))
+    return fa == fb if fa and fb else normalize_text(a) == normalize_text(b)
+
+
+def company_cooldown(entries: list[Entry], *, company: str, resume: str, today: date) -> str | None:
+    """Within COMPANY_COOLDOWN_DAYS days (counting today) of applying to a company, another job
+    there is only taken with the same resume. A reason to skip, or None. An earlier application
+    whose resume isn't known (imported history) counts as a different one."""
+    name = normalize_company(company)
+    if not name:
+        return None
+    others = [
+        e
+        for e in entries
+        if e.applied_on is not None
+        and 0 <= (today - e.applied_on).days < COMPANY_COOLDOWN_DAYS
+        and normalize_company(e.company) == name
+        and not (e.resume and same_resume(e.resume, resume))
+    ]
+    if not others:
+        return None
+    last = max(others, key=lambda e: e.applied_on or date.min)
+    assert last.applied_on is not None
+    days = (today - last.applied_on).days
+    when = "today" if days == 0 else "yesterday" if days == 1 else f"{days} days ago"
+    used = f"the {last.resume.strip()} resume" if last.resume else "an unknown resume"
+    return (
+        f'Applied to "{last.company.strip()}" {when} with {used} ("{last.position.strip()}", '
+        f"{last.where}); this job would use {resume}. Within {COMPANY_COOLDOWN_DAYS} days, "
+        "only the same resume can apply there again."
+    )
