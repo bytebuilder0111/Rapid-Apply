@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import summarize_resume
+from app.analysis import entry_cache
 from app.errors import AppError
 from app.integrations.service import decrypt_key, get_settings_row
 from app.profiles.models import Profile
@@ -60,12 +61,15 @@ async def update_resume_type(
         setattr(resume_type, field, value)
     await db.commit()
     await db.refresh(resume_type)
+    entry_cache.forget(resume_type.profile_id)  # a renamed resume changes the cooldown check
     return resume_type
 
 
 async def delete_resume_type(db: AsyncSession, resume_type: ResumeType) -> None:
+    profile_id = resume_type.profile_id
     await db.delete(resume_type)
     await db.commit()
+    entry_cache.forget(profile_id)
 
 
 async def upload_resume(

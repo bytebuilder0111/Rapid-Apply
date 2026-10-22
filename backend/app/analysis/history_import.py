@@ -21,6 +21,7 @@ from uuid import UUID
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analysis import entry_cache
 from app.analysis.duplicates import parse_date
 from app.analysis.models import JobHistory
 from app.db import SessionLocal
@@ -109,6 +110,7 @@ async def import_history(
         for r in rows
     )
     await db.commit()
+    entry_cache.forget(profile.id)
     return len(rows)
 
 

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import analyze_job_description
+from app.analysis import entry_cache
 from app.analysis.duplicates import Entry, company_cooldown, find_duplicate
 from app.analysis.models import Analysis, JobHistory
 from app.analysis.schemas import (
@@ -61,7 +62,10 @@ async def _resumes_context(db: AsyncSession, profile_id: UUID) -> list[dict]:
 
 
 async def _db_entries(db: AsyncSession, *, client_id: UUID, profile: Profile) -> list[Entry]:
-    """This profile's saved analyses (with the resume each applied with) and imported history."""
+    """This profile's saved analyses (with the resume each applied with) and imported history,
+    from memory when loaded (see entry_cache)."""
+    if (cached := entry_cache.get(profile.id)) is not None:
+        return cached
     rows = await db.execute(
         select(
             Analysis.company_name,
@@ -104,6 +108,7 @@ async def _db_entries(db: AsyncSession, *, client_id: UUID, profile: Profile) ->
         )
         for company, position, job_link, applied, source in history.all()
     ]
+    entry_cache.put(profile.id, entries)
     return entries
 
 
@@ -276,6 +281,17 @@ async def save_analysis(
     db.add(analysis)
     await db.commit()
     await db.refresh(analysis)
+    entry_cache.add(
+        profile.id,
+        Entry(
+            company=analysis.company_name,
+            position=analysis.position_name,
+            job_link=analysis.job_link or "",
+            where=f"saved for {profile.name} on {analysis.created_at:%Y-%m-%d}",
+            applied_on=analysis.created_at.date(),
+            resume=resume_type.name if selected_resume_type_id is not None else None,
+        ),
+    )
     return await _to_out(db, analysis)
 
 
