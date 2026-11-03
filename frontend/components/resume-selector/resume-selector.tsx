@@ -312,7 +312,8 @@ export function ResumeSelector() {
   };
 
   const canConfirm = analyzeOutput !== null && !isDismatched(analyzeOutput.result);
-  const applied = canConfirm && appliedTo === analyzeOutput;
+  // Only bidders confirm they applied; a client records a matched job straight away.
+  const applied = canConfirm && (!isBidder || appliedTo === analyzeOutput);
 
   const resumeName = (id: string) => resumeTypes?.find((r) => r.id === id)?.name;
 
@@ -396,19 +397,22 @@ export function ResumeSelector() {
                   {!isAnalyzing ? "Analyze" : phase === "checking" ? "Checking duplicates..." : "Analyzing..."}
                 </span>
               </Button>
-              {/* All three are always shown and unlock in order: a matched analysis enables the
-                  question, and confirming it enables recording (only applied jobs are recorded). */}
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!canConfirm || applied}
-                onClick={() => setAppliedTo(analyzeOutput)}
-              >
-                {/* Text in its own span: page translators (Chrome Translate) replace bare text
-                    nodes, and React then crashes inserting the icon next to them. */}
-                {applied && <CheckCircle2 className="size-4" />}
-                <span>Did you apply to this job?</span>
-              </Button>
+              {/* For bidders all three are always shown and unlock in order: a matched analysis
+                  enables the question, and confirming it enables recording (only applied jobs
+                  are recorded). Clients skip the question. */}
+              {isBidder && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!canConfirm || applied}
+                  onClick={() => setAppliedTo(analyzeOutput)}
+                >
+                  {/* Text in its own span: page translators (Chrome Translate) replace bare text
+                      nodes, and React then crashes inserting the icon next to them. */}
+                  {applied && <CheckCircle2 className="size-4" />}
+                  <span>Did you apply to this job?</span>
+                </Button>
+              )}
               <Button type="button" variant="outline" disabled={!applied} onClick={handleSubmit(record)}>
                 Record to Sheet
               </Button>
@@ -438,7 +442,7 @@ export function ResumeSelector() {
                 <span key="skipped">A skipped job can&apos;t be saved.</span>
               ) : isDismatched(analyzeOutput.result) ? (
                 <span key="dismatched">A Dismatched JD can&apos;t be saved.</span>
-              ) : appliedTo === analyzeOutput ? (
+              ) : applied ? (
                 <span key="applied">
                   Not recorded yet: click <span className="font-medium">Record to Sheet</span> to add it to
                   the profile&apos;s Google Sheet.
