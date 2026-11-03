@@ -683,3 +683,20 @@ def test_node_named_beside_another_backend_is_a_backend_too() -> None:
     # A title naming the backend decides between two: a "Python Full Stack Engineer" job.
     out = decide_match(response, jd, resumes, "Senior Python Full Stack Engineer")
     assert out.recommended_resume_type_id == "python"
+
+
+def test_a_python_resume_with_applied_ai_fits_an_ai_engineer_job() -> None:
+    # Donzell's Python resume: a full-stack engineer whose summary names applied AI work.
+    ai_python = {
+        "id": "ai-python",
+        "name": "Python",
+        "summary": "Senior full-stack engineer, Python and FastAPI. Expertise in applied AI (LLM "
+        "integration, retrieval-augmented generation, vector search).",
+        "skills": ["Python", "FastAPI", "Pydantic", "LLM integration"],
+    }
+    core = ["Python", "Pydantic", "FastAPI"]
+    checks = [_check(p["id"], same_role=False, fit=0.4) for p in [*LAKEYTH, ai_python]]
+    response = _response(role_type="ai", core=core, checks=checks)
+    assert decide_match(response, EPISTEMIX_JD, LAKEYTH).recommended_resume_type_id is None
+    out = decide_match(response, EPISTEMIX_JD, [*LAKEYTH[1:], ai_python])
+    assert out.recommended_resume_type_id == "ai-python"

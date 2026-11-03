@@ -271,10 +271,20 @@ _TOOL_NAMES = {
 }  # fmt: skip
 
 
+# A resume's own summary showing applied AI work, which makes it fit AI/ML Engineer jobs:
+# "Python engineer ... with applied AI/ML (LLM integration, RAG, AI agents)".
+_AI_RESUME = re.compile(
+    r"\b(applied ai|ai/ml|llms?\b|large language models?|retrieval[- ]augmented|rag\b"
+    r"|generative ai|genai|ai agents?|machine learning)"
+)
+
+
 def fits_discipline(resume: dict, role_type: str) -> bool:
-    """For a data/DevOps/mobile/frontend job: whether the resume is that kind of resume."""
+    """For a data/DevOps/mobile/frontend/AI job: whether the resume is that kind of resume."""
     words = _DISCIPLINE_WORDS.get(role_type)
     text = f"{resume['name']} {resume['summary']}".lower()
+    if role_type == "ai" and _AI_RESUME.search(text):
+        return True
     return words is None or bool(words.search(text))
 
 
