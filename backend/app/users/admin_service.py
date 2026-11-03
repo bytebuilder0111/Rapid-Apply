@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import session_cache
 from app.auth.service import hash_password
 from app.errors import AppError
 from app.models import RefreshToken, Role, User
@@ -109,6 +110,7 @@ async def _end_sessions(db: AsyncSession, user: User) -> None:
 async def sign_out(db: AsyncSession, user: User) -> None:
     await _end_sessions(db, user)
     await db.commit()
+    session_cache.clear()
 
 
 async def set_active(db: AsyncSession, user: User, *, is_active: bool) -> User:
@@ -116,6 +118,7 @@ async def set_active(db: AsyncSession, user: User, *, is_active: bool) -> User:
     if not is_active:
         await _end_sessions(db, user)
     await db.commit()
+    session_cache.clear()
     await db.refresh(user)
     return user
 
@@ -124,6 +127,7 @@ async def reset_password(db: AsyncSession, user: User, new_password: str) -> Non
     user.password_hash = hash_password(new_password)
     await _end_sessions(db, user)
     await db.commit()
+    session_cache.clear()
 
 
 async def soft_delete_client(db: AsyncSession, client: User) -> User:
@@ -137,6 +141,7 @@ async def soft_delete_client(db: AsyncSession, client: User) -> User:
         await _end_sessions(db, bidder)
 
     await db.commit()
+    session_cache.clear()
     await db.refresh(client)
     return client
 

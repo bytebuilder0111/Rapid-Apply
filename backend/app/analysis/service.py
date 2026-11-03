@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.service import analyze_job_description
 from app.analysis import entry_cache
 from app.analysis.duplicates import Entry, company_cooldown, find_duplicate
-from app.analysis.models import Analysis, JobHistory
+from app.analysis.models import Analysis, JobHistory, RecordStatus
 from app.analysis.schemas import (
     AnalysisOut,
     AnalyzeRequest,
@@ -363,6 +363,23 @@ async def list_analyses(
     return [
         _build_out(row, creator_name=names_by_id.get(row.created_by, "Unknown")) for row in rows
     ]
+
+
+async def get_record_status(
+    db: AsyncSession, analysis_id: UUID, *, client_id: UUID
+) -> tuple[RecordStatus, str | None]:
+    """Just the sheet-recording status, for the poll after Save (the whole analysis, job
+    description included, was re-downloaded every half second)."""
+    row = (
+        await db.execute(
+            select(Analysis.record_status, Analysis.record_error).where(
+                Analysis.id == analysis_id, Analysis.client_id == client_id
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        raise AppError("not_found", "Analysis not found", 404)
+    return row[0], row[1]
 
 
 async def get_analysis(db: AsyncSession, analysis_id: UUID, *, client_id: UUID) -> AnalysisOut:

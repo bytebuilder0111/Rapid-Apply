@@ -73,7 +73,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       toast.info("Your session has ended. Please sign in again.");
     };
     const check = () => {
-      if (document.visibilityState === "visible") api.get("/auth/me").catch(() => {});
+      // /auth/session answers from server memory and accepts an expired token, so an idle
+      // tab doesn't keep the database awake or renew its token every 15 minutes.
+      if (document.visibilityState === "visible") api.get("/auth/session").catch(() => {});
     };
     window.addEventListener(SESSION_ENDED_EVENT, endSession);
     document.addEventListener("visibilitychange", check);

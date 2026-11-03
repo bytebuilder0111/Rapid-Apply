@@ -47,6 +47,17 @@ def decode_access_token(token: str) -> dict:
         raise AppError("unauthorized", "Invalid or expired token", 401) from exc
 
 
+def decode_session_token(token: str) -> dict:
+    """An access token's claims for the session check, accepted even after it expired: it only
+    says whose session to look at, and the answer (on or ended) reveals nothing else."""
+    try:
+        return jwt.decode(
+            token, settings.jwt_secret, algorithms=["HS256"], options={"verify_exp": False}
+        )
+    except jwt.PyJWTError as exc:
+        raise AppError("unauthorized", "Invalid token", 401) from exc
+
+
 def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 

@@ -92,6 +92,18 @@ async def list_analyses(
     )
 
 
+@router.get("/{analysis_id}/record-status")
+async def get_record_status(
+    analysis_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str | None]:
+    client_id = scope_client_id(user)
+    assert client_id is not None
+    status, error = await service.get_record_status(db, analysis_id, client_id=client_id)
+    return {"record_status": status.value, "record_error": error}
+
+
 @router.get("/{analysis_id}", response_model=AnalysisOut)
 async def get_analysis(
     analysis_id: UUID,

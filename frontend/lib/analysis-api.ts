@@ -96,5 +96,7 @@ export const analysisApi = {
   analyze: (input: AnalyzeInput) => api.post<AnalyzeOutput>("/analyses/analyze", input),
   save: (input: SaveAnalysisInput) => api.post<Analysis>("/analyses", input),
   get: (id: string) => api.get<Analysis>(`/analyses/${id}`),
+  recordStatus: (id: string) =>
+    api.get<Pick<Analysis, "record_status" | "record_error">>(`/analyses/${id}/record-status`),
   retry: (id: string) => api.post<Analysis>(`/analyses/${id}/retry`),
 };

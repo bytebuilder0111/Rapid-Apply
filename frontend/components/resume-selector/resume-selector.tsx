@@ -36,10 +36,11 @@ function errorMessage(error: unknown, fallback: string): string {
  * replace that message with how it went. */
 async function reportRecording(saved: Analysis, id: string | number): Promise<void> {
   const label = `${saved.company_name} / ${saved.position_name}`;
-  let current = saved;
-  for (let i = 0; i < 40 && current.record_status === "PENDING"; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    current = await analysisApi.get(saved.id).catch(() => current);
+  let current: Pick<Analysis, "record_status" | "record_error"> = saved;
+  // Only the status is fetched, once a second, for up to half a minute.
+  for (let i = 0; i < 30 && current.record_status === "PENDING"; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    current = await analysisApi.recordStatus(saved.id).catch(() => current);
   }
   if (current.record_status === "SUCCESS") {
     toast.success(`Recorded in the Google Sheet: ${label}`, { id });
